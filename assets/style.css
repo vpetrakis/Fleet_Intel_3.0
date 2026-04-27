@@ -1,0 +1,1093 @@
+/* ═══════════════════════════════════════════════════════════════════
+   POSEIDON TITAN — Cinematic Design System
+   The Zenith Edition · v10.0.0
+   ═══════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Geist+Mono:wght@400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap');
+
+
+/* ───────────────────────────────────────
+   § 1 · DESIGN TOKENS
+─────────────────────────────────────── */
+:root {
+  /* Core Palette */
+  --bg:   #03070b;
+  --s1:   #060c12;
+  --s2:   #090f17;
+  --s3:   #0c121a;
+
+  /* Brand Accents */
+  --acc:    #00e0b0;
+  --acc2:   #c9a84c;
+  --red:    #ff2a55;
+  --purple: #7b68ee;
+  --amber:  #d4a843;
+
+  /* Text Hierarchy */
+  --t1: #f8fafc;
+  --t2: #64748b;
+  --t3: #2d3f52;
+
+  /* Glass Surfaces */
+  --glass-bg:      rgba(6, 12, 18, 0.72);
+  --glass-border:  rgba(0, 224, 176, 0.08);
+  --glass-border-hover: rgba(0, 224, 176, 0.22);
+  --glass-shadow:  0 8px 40px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.025) inset;
+  --glass-shadow-hover: 0 20px 60px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,224,176,0.12);
+
+  /* Glow Presets */
+  --glow-acc:  0 0 24px rgba(0, 224, 176, 0.28);
+  --glow-acc2: 0 0 24px rgba(201, 168, 76, 0.28);
+  --glow-red:  0 0 24px rgba(255, 42, 85,  0.28);
+
+  /* Typography */
+  --fd: 'Bricolage Grotesque', sans-serif;
+  --fb: 'Hanken Grotesk',      sans-serif;
+  --fm: 'Geist Mono',          monospace;
+
+  /* Radii */
+  --r:    14px;
+  --r-sm:  8px;
+  --r-lg: 22px;
+
+  /* Timing */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:   cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+/* ───────────────────────────────────────
+   § 2 · KEYFRAMES
+─────────────────────────────────────── */
+
+/* Entrance */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(28px);  }
+  to   { opacity: 1; transform: translateY(0);      }
+}
+@keyframes slideFade {
+  from { opacity: 0; transform: translateY(16px);  }
+  to   { opacity: 1; transform: translateY(0);      }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.93); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+@keyframes numberReveal {
+  from { opacity: 0; transform: scale(0.82) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
+/* Continuous */
+@keyframes shimmer {
+  0%   { background-position: -280% center; }
+  100% { background-position:  280% center; }
+}
+@keyframes borderPulse {
+  0%, 100% { opacity: 0.35; }
+  50%       { opacity: 1;    }
+}
+@keyframes warnPulse {
+  0%, 100% { box-shadow: 0 0 0   0   rgba(255,42,85,0),    var(--glass-shadow); }
+  50%       { box-shadow: 0 0 24px 2px rgba(255,42,85,0.18), var(--glass-shadow); }
+}
+@keyframes accPulse {
+  0%, 100% { box-shadow: 0 0 0   0   rgba(0,224,176,0),    var(--glass-shadow); }
+  50%       { box-shadow: 0 0 22px 2px rgba(0,224,176,0.14), var(--glass-shadow); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0);    }
+  50%       { transform: translateY(-5px); }
+}
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.012; }
+  50%       { opacity: 0.028; }
+}
+@keyframes scanDrift {
+  0%   { transform: translateY(-100vh); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateY(100vh);  opacity: 0; }
+}
+@keyframes ambientShift {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0%   50%; }
+}
+@keyframes tabUnderline {
+  from { transform: scaleX(0); transform-origin: left; }
+  to   { transform: scaleX(1); transform-origin: left; }
+}
+@keyframes shimmerButton {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+
+/* ───────────────────────────────────────
+   § 3 · GLOBAL RESET
+─────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, [class*="css"] {
+  font-family: var(--fb) !important;
+  color: var(--t1) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--fd) !important;
+  font-weight: 800 !important;
+  color: #fff !important;
+  letter-spacing: -0.035em !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 4 · THE CANVAS — App Background
+─────────────────────────────────────── */
+.stApp {
+  background-color: var(--bg) !important;
+  /* Layered background: ambient radials + grid + noise */
+  background-image:
+    radial-gradient(ellipse 90% 45% at 15%  0%,  rgba(0,224,176,0.045) 0%, transparent 65%),
+    radial-gradient(ellipse 70% 40% at 85% 100%, rgba(201,168,76,0.030) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 30% at 50%  50%, rgba(123,104,238,0.015) 0%, transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cpath d='M64 0L0 0 0 64' fill='none' stroke='rgba(255,255,255,0.013)' stroke-width='0.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.032'/%3E%3C/svg%3E") !important;
+  background-attachment: fixed !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 64px 64px, 512px 512px !important;
+  min-height: 100vh;
+}
+
+/* Animated grid pulse overlay */
+.stApp::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,0.018) 3px,
+    rgba(0,0,0,0.018) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+  animation: gridPulse 10s ease-in-out infinite;
+}
+
+/* Slow-moving scan line — purely cinematic */
+.stApp::after {
+  content: '';
+  position: fixed;
+  left: 0; right: 0;
+  height: 120px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(0,224,176,0.012) 45%,
+    rgba(0,224,176,0.025) 50%,
+    rgba(0,224,176,0.012) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+  animation: scanDrift 14s linear infinite;
+}
+
+
+/* ───────────────────────────────────────
+   § 5 · LAYOUT
+─────────────────────────────────────── */
+header, footer, #MainMenu {
+  visibility: hidden !important;
+  display: none !important;
+}
+
+.block-container {
+  padding: 1rem 2.6rem 0 !important;
+  max-width: 100% !important;
+  position: relative;
+  z-index: 1;
+}
+
+/* Stagger sibling Streamlit elements on load */
+.block-container > div > div > div:nth-child(1) { animation: fadeIn 0.4s ease 0.05s both; }
+.block-container > div > div > div:nth-child(2) { animation: fadeIn 0.4s ease 0.12s both; }
+.block-container > div > div > div:nth-child(3) { animation: fadeIn 0.4s ease 0.19s both; }
+.block-container > div > div > div:nth-child(4) { animation: fadeIn 0.4s ease 0.26s both; }
+.block-container > div > div > div:nth-child(5) { animation: fadeIn 0.4s ease 0.33s both; }
+
+
+/* ───────────────────────────────────────
+   § 6 · HERO
+─────────────────────────────────────── */
+.hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 40px;
+  margin-bottom: 28px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(140deg,
+    rgba(6,12,18,0.96) 0%,
+    rgba(9,15,23,0.96) 50%,
+    rgba(7,11,17,0.96) 100%);
+  border: 1px solid rgba(0,224,176,0.09);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.02) inset,
+    0 32px 64px rgba(0,0,0,0.6),
+    0 0 80px rgba(0,224,176,0.03);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  animation: slideUp 0.65s var(--ease-out-expo) both;
+}
+
+/* Animated top edge gradient */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent   0%,
+    rgba(201,168,76,0.55) 18%,
+    rgba(0,224,176,0.90)  50%,
+    rgba(201,168,76,0.55) 82%,
+    transparent  100%);
+  animation: borderPulse 3.5s ease-in-out infinite;
+}
+
+/* Bottom micro line */
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 12%; right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(0,224,176,0.08),
+    transparent);
+}
+
+/* Ambient interior glow blobs */
+.hero-left {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-logo {
+  width: 54px;
+  height: 54px;
+  filter: drop-shadow(0 0 18px rgba(0,224,176,0.45))
+          drop-shadow(0 0 6px  rgba(0,224,176,0.25));
+  animation: float 4.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.hero-title-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hero-title {
+  font-family: var(--fd) !important;
+  font-weight: 800 !important;
+  font-size: 1.95rem !important;
+  letter-spacing: -0.05em !important;
+  line-height: 1.05 !important;
+
+  /* Animated shimmer gradient */
+  background: linear-gradient(
+    110deg,
+    #ffffff 15%,
+    var(--acc2) 30%,
+    #ffffff 40%,
+    var(--acc)  55%,
+    var(--acc2) 65%,
+    #ffffff 80%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  animation: shimmer 5s linear infinite;
+}
+
+.hero-sub {
+  font-family: var(--fm) !important;
+  font-size: 0.57rem !important;
+  color: var(--t3) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  font-weight: 500;
+}
+
+.hero-badge {
+  font-family: var(--fm);
+  font-size: 0.57rem;
+  color: var(--t2);
+  text-align: right;
+  line-height: 2;
+  position: relative;
+  z-index: 1;
+}
+
+
+/* ───────────────────────────────────────
+   § 7 · VESSEL CARD (vcard)
+─────────────────────────────────────── */
+.vcard {
+  position: relative;
+  transition: border-color 0.35s ease,
+              box-shadow 0.35s ease,
+              transform  0.35s var(--ease-out-expo) !important;
+  animation: slideFade 0.55s var(--ease-out-expo) both;
+}
+
+.vcard:hover {
+  border-color: rgba(0,224,176,0.18) !important;
+  box-shadow:
+    0 24px 64px rgba(0,0,0,0.65),
+    0 0 0 1px rgba(0,224,176,0.1),
+    0 0 40px rgba(0,224,176,0.04) !important;
+  transform: translateY(-2px);
+}
+
+
+/* ───────────────────────────────────────
+   § 8 · HUD METRICS GRID
+─────────────────────────────────────── */
+.hud-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 1400px) { .hud-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 860px)  { .hud-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* Base card */
+.hud-card {
+  position: relative;
+  background: linear-gradient(150deg,
+    rgba(6, 12, 18,  0.88) 0%,
+    rgba(9, 15, 23,  0.92) 100%);
+  border: 1px solid rgba(0,224,176,0.07);
+  border-radius: var(--r);
+  padding: 18px 20px 16px;
+  overflow: hidden;
+  cursor: default;
+  transition:
+    border-color 0.3s ease,
+    transform    0.3s var(--ease-out-expo),
+    box-shadow   0.3s ease;
+  animation: slideUp 0.5s var(--ease-out-expo) both;
+}
+
+/* Staggered entrance */
+.hud-card:nth-child(1) { animation-delay: 0.06s; }
+.hud-card:nth-child(2) { animation-delay: 0.11s; }
+.hud-card:nth-child(3) { animation-delay: 0.16s; }
+.hud-card:nth-child(4) { animation-delay: 0.21s; }
+.hud-card:nth-child(5) { animation-delay: 0.26s; }
+.hud-card:nth-child(6) { animation-delay: 0.31s; }
+
+/* Inner top-edge highlight */
+.hud-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent, rgba(0,224,176,0.22), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Ambient interior glow (inactive) */
+.hud-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r);
+  background: radial-gradient(
+    ellipse 85% 65% at 50% -10%,
+    rgba(0,224,176,0.07),
+    transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.hud-card:hover {
+  border-color: rgba(0,224,176,0.18);
+  transform: translateY(-4px) scale(1.01);
+  box-shadow:
+    0 14px 36px rgba(0,0,0,0.5),
+    0 0 0 1px rgba(0,224,176,0.07),
+    0 0 28px rgba(0,224,176,0.06);
+}
+
+.hud-card:hover::before,
+.hud-card:hover::after {
+  opacity: 1;
+}
+
+/* Warning state */
+.hud-card.hud-warn {
+  border-color: rgba(255,42,85,0.14) !important;
+  animation: slideUp 0.5s var(--ease-out-expo) both,
+             warnPulse 2.8s ease-in-out infinite;
+}
+
+.hud-card.hud-warn::before {
+  background: linear-gradient(90deg,
+    transparent, rgba(255,42,85,0.30), transparent);
+  opacity: 1 !important;
+}
+
+.hud-card.hud-warn::after {
+  background: radial-gradient(
+    ellipse 85% 65% at 50% -10%,
+    rgba(255,42,85,0.08),
+    transparent 70%);
+  opacity: 1 !important;
+}
+
+/* HUD internals */
+.hud-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.hud-title {
+  font-family: var(--fm);
+  font-size: 0.57rem;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.hud-icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  opacity: 0.28;
+  transition: opacity 0.3s ease, transform 0.3s var(--ease-out-expo);
+  margin-top: 1px;
+}
+
+.hud-card:hover .hud-icon {
+  opacity: 0.65;
+  transform: scale(1.12);
+}
+
+.hud-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: var(--acc);
+  display: block;
+}
+
+.hud-val {
+  font-family: var(--fd);
+  font-weight: 800;
+  font-size: 1.75rem;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  animation: numberReveal 0.55s var(--ease-out-expo) both;
+}
+
+.hud-sub {
+  font-family: var(--fm);
+  font-size: 0.52rem;
+  color: var(--t3);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 6px;
+}
+
+
+/* ───────────────────────────────────────
+   § 9 · TABS
+─────────────────────────────────────── */
+.stTabs {
+  animation: fadeIn 0.45s ease 0.15s both;
+}
+
+.stTabs [data-baseweb="tab-list"] {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255,255,255,0.04) !important;
+  gap: 2px !important;
+  padding: 0 !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  padding: 11px 17px 12px !important;
+  color: var(--t3) !important;
+  font-weight: 600 !important;
+  font-size: 0.6rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.14em !important;
+  font-family: var(--fm) !important;
+  transition: color 0.22s ease, background 0.22s ease !important;
+  margin-bottom: -1px !important;
+  cursor: pointer;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+  color: rgba(0,224,176,0.65) !important;
+  background: rgba(0,224,176,0.025) !important;
+}
+
+.stTabs [aria-selected="true"] {
+  color: var(--acc) !important;
+  border-bottom-color: var(--acc) !important;
+  background: linear-gradient(180deg,
+    rgba(0,224,176,0.035) 0%,
+    transparent 100%) !important;
+  text-shadow: 0 0 16px rgba(0,224,176,0.4);
+}
+
+.stTabs [data-baseweb="tab-panel"] {
+  padding-top: 22px !important;
+  animation: fadeIn 0.3s ease both;
+}
+
+
+/* ───────────────────────────────────────
+   § 10 · FILE UPLOADER
+─────────────────────────────────────── */
+[data-testid="stFileUploader"] {
+  background: linear-gradient(135deg,
+    rgba(6,12,18,0.82) 0%,
+    rgba(9,15,23,0.88) 100%) !important;
+  border: 1px dashed rgba(0,224,176,0.18) !important;
+  border-radius: var(--r) !important;
+  padding: 32px !important;
+  transition: all 0.3s ease !important;
+  animation: fadeIn 0.5s ease both;
+}
+
+[data-testid="stFileUploader"]:hover {
+  border-color: rgba(0,224,176,0.40) !important;
+  background: rgba(0,224,176,0.025) !important;
+  box-shadow: 0 0 40px rgba(0,224,176,0.05),
+              inset 0 0 40px rgba(0,224,176,0.02) !important;
+}
+
+[data-testid="stFileUploader"] section {
+  border: none !important;
+  background: transparent !important;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+  background: transparent !important;
+  border: none !important;
+}
+
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] p {
+  color: var(--t2) !important;
+  font-family: var(--fm) !important;
+  font-size: 0.7rem !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 11 · DATAFRAME
+─────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+  border-radius: var(--r) !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(0,224,176,0.07) !important;
+  animation: scaleIn 0.4s var(--ease-out-expo) both;
+}
+
+/* DataFrame header rows */
+[data-testid="stDataFrame"] th {
+  background: rgba(0,224,176,0.025) !important;
+  font-family: var(--fm) !important;
+  font-size: 0.58rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.13em !important;
+  color: var(--t2) !important;
+  border-bottom: 1px solid rgba(0,224,176,0.08) !important;
+}
+
+[data-testid="stDataFrame"] td {
+  font-family: var(--fm) !important;
+  font-size: 0.72rem !important;
+  color: var(--t1) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.025) !important;
+}
+
+[data-testid="stDataFrame"] tr:hover td {
+  background: rgba(0,224,176,0.025) !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 12 · NATIVE STREAMLIT METRICS
+─────────────────────────────────────── */
+div[data-testid="stMetric"] {
+  background: linear-gradient(150deg,
+    rgba(6,12,18,0.88),
+    rgba(9,15,23,0.92)) !important;
+  border: 1px solid rgba(0,224,176,0.07) !important;
+  border-radius: var(--r) !important;
+  padding: 18px 16px !important;
+  transition: border-color 0.3s ease, transform 0.3s var(--ease-out-expo), box-shadow 0.3s ease !important;
+  animation: slideUp 0.45s var(--ease-out-expo) both;
+}
+
+div[data-testid="stMetric"]:hover {
+  border-color: rgba(0,224,176,0.18) !important;
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.45) !important;
+}
+
+div[data-testid="stMetricLabel"] {
+  font-family: var(--fm) !important;
+  font-size: 0.57rem !important;
+  color: var(--t2) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.15em !important;
+  font-weight: 600 !important;
+  white-space: normal;
+  word-wrap: break-word;
+}
+
+div[data-testid="stMetricValue"] {
+  font-family: var(--fd) !important;
+  font-size: 1.5rem !important;
+  font-weight: 800 !important;
+  color: #fff !important;
+  line-height: 1.1 !important;
+  margin-top: 6px !important;
+  white-space: normal;
+  word-wrap: break-word;
+  animation: numberReveal 0.55s var(--ease-out-expo) both;
+}
+
+div[data-testid="stMetricDelta"] {
+  font-family: var(--fm) !important;
+  font-size: 0.65rem !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 13 · BUTTONS
+─────────────────────────────────────── */
+.stDownloadButton button,
+.stButton button {
+  background: linear-gradient(135deg,
+    rgba(0,224,176,0.10) 0%,
+    rgba(0,224,176,0.04) 100%) !important;
+  border: 1px solid rgba(0,224,176,0.24) !important;
+  color: var(--acc) !important;
+  font-family: var(--fm) !important;
+  font-size: 0.62rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  border-radius: var(--r-sm) !important;
+  padding: 10px 22px !important;
+  position: relative !important;
+  overflow: hidden !important;
+  transition:
+    border-color 0.25s ease,
+    box-shadow   0.25s ease,
+    transform    0.25s var(--ease-out-expo) !important;
+}
+
+/* Shimmer sweep on hover */
+.stDownloadButton button::before,
+.stButton button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 25%,
+    rgba(0,224,176,0.12) 50%,
+    transparent 75%
+  );
+  background-size: 200% auto;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.stDownloadButton button:hover,
+.stButton button:hover {
+  border-color: rgba(0,224,176,0.50) !important;
+  box-shadow: 0 0 20px rgba(0,224,176,0.14),
+              0 4px 12px rgba(0,0,0,0.3) !important;
+  transform: translateY(-2px) !important;
+}
+
+.stDownloadButton button:hover::before,
+.stButton button:hover::before {
+  opacity: 1;
+  animation: shimmerButton 1s linear infinite;
+}
+
+.stDownloadButton button:active,
+.stButton button:active {
+  transform: translateY(0) !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 14 · ALERTS & NOTIFICATIONS
+─────────────────────────────────────── */
+[data-testid="stAlert"],
+div[data-testid^="stAlert"] {
+  border-radius: var(--r) !important;
+  backdrop-filter: blur(20px) !important;
+  animation: slideUp 0.3s var(--ease-out-expo) both;
+}
+
+/* Success */
+[data-testid="stAlert"][kind="success"],
+.stSuccess > div,
+.element-container .stAlert.stSuccess {
+  background: rgba(0,224,176,0.045) !important;
+  border-color: rgba(0,224,176,0.30) !important;
+  border-left: 3px solid var(--acc) !important;
+}
+
+/* Error */
+[data-testid="stAlert"][kind="error"],
+.stError > div {
+  background: rgba(255,42,85,0.045) !important;
+  border-color: rgba(255,42,85,0.30) !important;
+  border-left: 3px solid var(--red) !important;
+}
+
+/* Warning */
+[data-testid="stAlert"][kind="warning"],
+.stWarning > div {
+  background: rgba(201,168,76,0.045) !important;
+  border-color: rgba(201,168,76,0.30) !important;
+  border-left: 3px solid var(--acc2) !important;
+}
+
+/* Info */
+[data-testid="stAlert"][kind="info"],
+.stInfo > div {
+  background: rgba(0,224,176,0.025) !important;
+  border-color: rgba(0,224,176,0.15) !important;
+  border-left: 3px solid rgba(0,224,176,0.40) !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 15 · SELECTBOX / INPUTS
+─────────────────────────────────────── */
+[data-testid="stSelectbox"] > div > div,
+[data-baseweb="select"] > div {
+  background: rgba(6,12,18,0.9) !important;
+  border: 1px solid rgba(0,224,176,0.12) !important;
+  border-radius: var(--r-sm) !important;
+  font-family: var(--fm) !important;
+  font-size: 0.72rem !important;
+  color: var(--t1) !important;
+  transition: border-color 0.25s ease !important;
+}
+
+[data-testid="stSelectbox"] > div > div:hover,
+[data-baseweb="select"]:hover > div {
+  border-color: rgba(0,224,176,0.28) !important;
+  box-shadow: 0 0 0 3px rgba(0,224,176,0.05) !important;
+}
+
+/* Dropdown options */
+[data-baseweb="popover"],
+[data-baseweb="menu"] {
+  background: rgba(8,14,22,0.98) !important;
+  border: 1px solid rgba(0,224,176,0.12) !important;
+  border-radius: var(--r-sm) !important;
+  backdrop-filter: blur(24px) !important;
+}
+
+[data-baseweb="option"]:hover {
+  background: rgba(0,224,176,0.07) !important;
+}
+
+[aria-selected="true"][data-baseweb="option"] {
+  background: rgba(0,224,176,0.12) !important;
+  color: var(--acc) !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 16 · SPINNER
+─────────────────────────────────────── */
+[data-testid="stSpinner"] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+[data-testid="stSpinner"] > div > div,
+.stSpinner > div {
+  border-color: rgba(0,224,176,0.18) rgba(0,224,176,0.18) rgba(0,224,176,0.18) var(--acc) !important;
+  width: 22px !important;
+  height: 22px !important;
+}
+
+[data-testid="stSpinner"] p {
+  font-family: var(--fm) !important;
+  font-size: 0.68rem !important;
+  color: var(--t2) !important;
+  letter-spacing: 0.08em;
+}
+
+
+/* ───────────────────────────────────────
+   § 17 · QUARANTINE CARD
+─────────────────────────────────────── */
+.q-card {
+  position: relative;
+  background: linear-gradient(135deg,
+    rgba(255,42,85,0.04) 0%,
+    rgba(6,12,18,0.80) 100%);
+  border: 1px solid rgba(255,42,85,0.14);
+  border-left: 3px solid var(--red);
+  border-radius: var(--r);
+  padding: 18px 22px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition:
+    border-color 0.3s ease,
+    background   0.3s ease,
+    transform    0.3s var(--ease-out-expo),
+    box-shadow   0.3s ease;
+  animation: slideUp 0.35s var(--ease-out-expo) both;
+}
+
+.q-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 60% at 0% 50%,
+    rgba(255,42,85,0.06),
+    transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.q-card:hover {
+  border-color: rgba(255,42,85,0.28);
+  background: rgba(255,42,85,0.055);
+  transform: translateX(5px);
+  box-shadow: -3px 0 20px rgba(255,42,85,0.08),
+               0 8px 24px rgba(0,0,0,0.4);
+}
+
+.q-card:hover::before {
+  opacity: 1;
+}
+
+
+/* ───────────────────────────────────────
+   § 18 · PROGRESS BARS (DQI)
+─────────────────────────────────────── */
+[data-testid="stProgressBar"] > div,
+[role="progressbar"] {
+  background: rgba(255,255,255,0.05) !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+}
+
+[data-testid="stProgressBar"] > div > div,
+[role="progressbar"] > div {
+  background: linear-gradient(90deg,
+    var(--acc) 0%,
+    var(--acc2) 60%,
+    var(--acc) 100%) !important;
+  background-size: 200% auto !important;
+  border-radius: 6px !important;
+  animation: ambientShift 3s linear infinite !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 19 · PLOTLY CHART WRAPPERS
+─────────────────────────────────────── */
+[data-testid="stPlotlyChart"] {
+  border-radius: var(--r) !important;
+  overflow: hidden;
+  animation: scaleIn 0.45s var(--ease-out-expo) both;
+  /* Subtle ambient glow under charts */
+  filter: drop-shadow(0 8px 32px rgba(0,0,0,0.5));
+}
+
+
+/* ───────────────────────────────────────
+   § 20 · DIVIDER
+─────────────────────────────────────── */
+hr {
+  border: none !important;
+  height: 1px !important;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(0,224,176,0.10) 25%,
+    rgba(201,168,76,0.12) 50%,
+    rgba(0,224,176,0.10) 75%,
+    transparent 100%) !important;
+  margin: 24px 0 !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 21 · SIDEBAR (collapsed but styled)
+─────────────────────────────────────── */
+[data-testid="stSidebar"] {
+  background: rgba(4,9,14,0.97) !important;
+  border-right: 1px solid rgba(0,224,176,0.07) !important;
+  backdrop-filter: blur(30px) !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 22 · TOOLTIP / POPOVER
+─────────────────────────────────────── */
+[data-testid="stTooltipContent"] {
+  background: rgba(6,12,18,0.98) !important;
+  border: 1px solid rgba(0,224,176,0.20) !important;
+  border-radius: var(--r-sm) !important;
+  font-family: var(--fm) !important;
+  font-size: 0.68rem !important;
+  color: var(--t1) !important;
+  backdrop-filter: blur(20px) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 23 · SCROLLBAR
+─────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: var(--bg); }
+::-webkit-scrollbar-thumb  {
+  background: linear-gradient(180deg, var(--acc) 0%, var(--acc2) 100%);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--acc);
+}
+::-webkit-scrollbar-corner { background: var(--bg); }
+
+
+/* ───────────────────────────────────────
+   § 24 · INFO / SUCCESS / ERROR BOX ICONS
+─────────────────────────────────────── */
+[data-testid="stAlert"] svg {
+  opacity: 0.8;
+}
+
+
+/* ───────────────────────────────────────
+   § 25 · COLUMN LAYOUT SPACING
+─────────────────────────────────────── */
+[data-testid="column"] {
+  padding: 0 6px !important;
+}
+
+[data-testid="stHorizontalBlock"] {
+  gap: 12px !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 26 · EXPANDER
+─────────────────────────────────────── */
+[data-testid="stExpander"] {
+  background: rgba(6,12,18,0.65) !important;
+  border: 1px solid rgba(0,224,176,0.07) !important;
+  border-radius: var(--r) !important;
+  transition: border-color 0.3s ease !important;
+}
+
+[data-testid="stExpander"]:hover {
+  border-color: rgba(0,224,176,0.16) !important;
+}
+
+[data-testid="stExpander"] summary {
+  font-family: var(--fm) !important;
+  font-size: 0.7rem !important;
+  letter-spacing: 0.06em !important;
+  color: var(--t2) !important;
+}
+
+
+/* ───────────────────────────────────────
+   § 27 · SELECTION HIGHLIGHT
+─────────────────────────────────────── */
+::selection {
+  background: rgba(0,224,176,0.22);
+  color: #fff;
+}
+
+
+/* ───────────────────────────────────────
+   § 28 · UTILITY — pill badges
+─────────────────────────────────────── */
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  font-family: var(--fm);
+}
+
+.p-ok {
+  background: rgba(0,224,176,0.06);
+  color: var(--acc);
+  border: 1px solid rgba(0,224,176,0.16);
+}
+
+.p-c {
+  background: rgba(255,42,85,0.06);
+  color: var(--red);
+  border: 1px solid rgba(255,42,85,0.16);
+}
+
+
+/* ───────────────────────────────────────
+   § 29 · RESPONSIVE TWEAKS
+─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .block-container { padding: 0.8rem 1rem 0 !important; }
+  .hero            { padding: 20px 22px; }
+  .hero-title      { font-size: 1.4rem !important; }
+  .hud-val         { font-size: 1.45rem; }
+}
