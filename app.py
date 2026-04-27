@@ -106,10 +106,9 @@ def compute_dqi(r1, r2, days, phys_burn, drift, ghost_tol):
     return int(sum(scores) / len(scores))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# THE ROUTER: CONFIGURATION-DRIVEN MANIFEST MAPPING
+# THE ROUTER: CONFIGURATION-DRIVEN MANIFEST MAPPING (TOP-TRUNCATION)
 # ═══════════════════════════════════════════════════════════════════════════════
-# Hardcoded split lines where the earlier Excel template version begins.
-# (Includes duplicate naming conventions to ensure matching regardless of filename spacing)
+# Hardcoded split lines where the LATEST Excel template begins (Reading Downwards).
 MULTI_VERSION_MAP = {
     'COURAGE': 118,
     'DIGNITY': 128,
@@ -118,7 +117,7 @@ MULTI_VERSION_MAP = {
     'GEORGIA T': 175,
     'STEFANOST': 201,
     'STEFANOS T': 201,
-    'CHRISTIANNA': 85
+    'CHRISTIANNA': 85  # Retained per previous context
 }
 
 def _map_columns(top_header, bottom_header, num_cols):
@@ -158,7 +157,7 @@ def _map_columns(top_header, bottom_header, num_cols):
     return cols_found
 
 def _parse_standard(df_raw):
-    """LANE 1: Deepest Lock. Fast parser for normal vessels or pre-sliced chunks."""
+    """LANE 1: Deepest Lock. Scans the provided dataframe to find the valid header anchor."""
     header_idx = -1
     cols_found = {}
     for i in range(min(150, len(df_raw))):
@@ -169,38 +168,20 @@ def _parse_standard(df_raw):
             bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
             cols_found = _map_columns(top_header, bottom_header, len(df_raw.columns))
 
-    if header_idx == -1: raise ValueError("Standard Lock Failed: No valid headers found.")
+    if header_idx == -1: raise ValueError("Matrix Lock Failed: No valid headers found in target zone.")
     df = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
     for std_name, exc_idx in cols_found.items(): df[std_name] = df.iloc[:, exc_idx]
     return df
 
-def _parse_multiblock(df_raw, split_row):
-    """LANE 2: Deterministic Manifest Slicer. Cuts file exactly at the configured row."""
-    # Convert Excel row coordinate to 0-based Pandas index (e.g., Row 118 -> Index 117)
-    idx = max(0, int(split_row) - 1)
+def _parse_manifest(df_raw, start_row):
+    """LANE 2: Top-Truncation. Deletes old history above the start_row, processes downwards."""
+    idx = max(0, int(start_row) - 1)
     
-    # Slice the file into two completely isolated islands
-    chunk_top = df_raw.iloc[:idx].copy().reset_index(drop=True)
-    chunk_bottom = df_raw.iloc[idx:].copy().reset_index(drop=True)
+    # Take the digital guillotine and slice off everything above the configured row
+    clean_bottom_chunk = df_raw.iloc[idx:].copy().reset_index(drop=True)
     
-    dfs = []
-    
-    # Process the newer template at the top
-    try:
-        dfs.append(_parse_standard(chunk_top))
-    except ValueError:
-        pass # Ignored if the top chunk happens to be blank/invalid
-        
-    # Process the older template at the bottom
-    try:
-        dfs.append(_parse_standard(chunk_bottom))
-    except ValueError:
-        pass # Ignored if the bottom chunk happens to be blank/invalid
-
-    if not dfs: raise ValueError("Manifest Extraction Failed: Could not locate headers in either configured chunk.")
-    
-    # Vertically stack both templates (will be sorted by date later)
-    return pd.concat(dfs, ignore_index=True)
+    # Process only this clean bottom chunk using the standard parser
+    return _parse_standard(clean_bottom_chunk)
 
 def semantic_parse(file_bytes, file_name):
     vn_raw = re.sub(r'\.[^.]+$', '', file_name).strip()
@@ -223,7 +204,7 @@ def semantic_parse(file_bytes, file_name):
             break
 
     if is_multi_version:
-        df = _parse_multiblock(df_raw, split_row)
+        df = _parse_manifest(df_raw, split_row)
     else:
         df = _parse_standard(df_raw)
 
