@@ -40,7 +40,7 @@ def load_local_css():
     if css_path.exists():
         st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
     else:
-        st.warning(f"⚠️ CSS not found at: {css_path} — check your repo structure.")
+        st.warning(f"⚠️ CSS not found at: {css_path} — Ensure your assets folder is pushed to GitHub.")
 
 load_local_css()
 
@@ -86,11 +86,19 @@ def load_fleet_master():
 fleet_db = load_fleet_master()
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FORENSIC UTILITIES
+# FORENSIC UTILITIES & LEXICAL SIEVE
 # ═══════════════════════════════════════════════════════════════════════════════
 def _sn(val):
+    """The 3.0 Lexical Sieve & Nullification Protocol"""
     if pd.isna(val): return np.nan
-    s = re.sub(r'[^\d.\-]', '', str(val).strip())
+    s = str(val).strip().upper()
+    
+    # Predefined Burn List for "Silent Strings"
+    if s in ['NIL', 'N/A', 'NA', 'XXX', 'NONE', 'UNKNOWN', 'BLANK', '-', 'X', '', 'NULL']:
+        return np.nan
+        
+    # Sieve: Extract only numbers and minus signs
+    s = re.sub(r'[^\d.\-]', '', s)
     try:
         return float(s) if s and s not in ('.', '-', '-.') else np.nan
     except ValueError:
@@ -137,7 +145,7 @@ def compute_dqi(r1, r2, days, phys_burn, drift, ghost_tol):
     return int(sum(scores) / len(scores))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SEMANTIC INGESTION & SCHEMA ENFORCEMENT
+# SEMANTIC INGESTION & DECONTAMINATION CHAMBER
 # ═══════════════════════════════════════════════════════════════════════════════
 def semantic_parse(file_bytes, file_name):
     vn_raw = re.sub(r'\.[^.]+$', '', file_name).strip()
@@ -154,15 +162,15 @@ def semantic_parse(file_bytes, file_name):
     if df_raw.empty or len(df_raw) < 4:
         raise ValueError("File is empty or severely malformed.")
 
-    header_idx, cols_found = 0, {}
-    for i in range(min(60, len(df_raw))):
+    # STAGE 1: THE MATRIX LOCK (Bypass Template Metadata)
+    header_idx, cols_found = -1, {}
+    for i in range(min(150, len(df_raw))):
         vals = [str(x).upper() for x in df_raw.iloc[i].values if pd.notna(x)]
         if any(k in v for v in vals for k in ['DATE', 'DAY']) and \
            any(k in v for v in vals for k in ['PORT', 'LOC']):
             header_idx   = i
             top_header   = df_raw.iloc[i].ffill()
-            bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) \
-                            else pd.Series([np.nan] * len(df_raw.columns))
+            bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
 
             for j in range(len(df_raw.columns)):
                 c1 = str(top_header.iloc[j]).upper().strip()   if pd.notna(top_header.iloc[j])   else ""
@@ -170,58 +178,72 @@ def semantic_parse(file_bytes, file_name):
                 c_comb = f"{c1} {c2}".strip()
 
                 if   'VOY'  in c_comb:                             cols_found['Voy']       = j
-                elif 'PORT' in c_comb or 'LOC' in c_comb:         cols_found['Port']      = j
+                elif 'PORT' in c_comb or 'LOC' in c_comb:          cols_found['Port']      = j
                 elif 'A/D'  in c_comb or c_comb == 'AD' or 'STATUS' in c_comb:
                                                                    cols_found['AD']        = j
                 elif 'SPEED' in c_comb:                            cols_found['Speed']     = j
-                elif 'CARGO' in c_comb or 'QTY' in c_comb:        cols_found['CargoQty']  = j
-                elif 'DATE'  in c_comb or 'DAY' in c_comb:        cols_found['Date']      = j
-                elif 'TIME'  in c_comb and 'TOTAL' not in c_comb: cols_found['Time']      = j
-                elif 'DIST'  in c_comb and 'LEG'   in c_comb:     cols_found['DistLeg']   = j
-                elif 'DIST'  in c_comb and 'TOTAL' in c_comb:     cols_found['TotalDist'] = j
+                elif 'CARGO' in c_comb or 'QTY' in c_comb:         cols_found['CargoQty']  = j
+                elif 'DATE'  in c_comb or 'DAY' in c_comb:         cols_found['Date']      = j
+                elif 'TIME'  in c_comb and 'TOTAL' not in c_comb:  cols_found['Time']      = j
+                elif 'DIST'  in c_comb and 'LEG'   in c_comb:      cols_found['DistLeg']   = j
+                elif 'DIST'  in c_comb and 'TOTAL' in c_comb:      cols_found['TotalDist'] = j
                 elif 'BUNKER' in c1 or 'RECEIV' in c1:
-                    if   'FO'     in c2 and 'MGO' not in c2:      cols_found['Bunk_FO']     = j
+                    if   'FO'     in c2 and 'MGO' not in c2:       cols_found['Bunk_FO']     = j
                     elif 'MGO'    in c2:                           cols_found['Bunk_MGO']    = j
                     elif 'MELO'   in c2:                           cols_found['Bunk_MELO']   = j
-                    elif 'HSCYLO' in c2 or 'HS CYL' in c2:        cols_found['Bunk_HSCYLO'] = j
-                    elif 'LSCYLO' in c2 or 'LS CYL' in c2:        cols_found['Bunk_LSCYLO'] = j
-                    elif 'CYLO'   in c2 or 'CYL OIL' in c2:       cols_found['Bunk_CYLO']   = j
+                    elif 'HSCYLO' in c2 or 'HS CYL' in c2:         cols_found['Bunk_HSCYLO'] = j
+                    elif 'LSCYLO' in c2 or 'LS CYL' in c2:         cols_found['Bunk_LSCYLO'] = j
+                    elif 'CYLO'   in c2 or 'CYL OIL' in c2:        cols_found['Bunk_CYLO']   = j
                     elif 'GELO'   in c2:                           cols_found['Bunk_GELO']   = j
                 elif 'ROB' in c1 or 'REMAIN' in c1:
-                    if   'FO A'   in c2 or 'FO ACT' in c2:        cols_found['FO_A']      = j
-                    elif 'FO L'   in c2 or 'FO LED' in c2:        cols_found['FO_L']      = j
+                    if   'FO A'   in c2 or 'FO ACT' in c2:         cols_found['FO_A']      = j
+                    elif 'FO L'   in c2 or 'FO LED' in c2:         cols_found['FO_L']      = j
                     elif 'MGO A'  in c2:                           cols_found['MGO_A']     = j
                     elif 'MGO L'  in c2:                           cols_found['MGO_L']     = j
                     elif 'MELO'   in c2:                           cols_found['MELO_R']    = j
-                    elif 'HSCYLO' in c2 or 'HS CYL' in c2:        cols_found['HSCYLO_R']  = j
-                    elif 'LSCYLO' in c2 or 'LS CYL' in c2:        cols_found['LSCYLO_R']  = j
-                    elif 'CYLO'   in c2 or 'CYL OIL' in c2:       cols_found['CYLO_R']    = j
+                    elif 'HSCYLO' in c2 or 'HS CYL' in c2:         cols_found['HSCYLO_R']  = j
+                    elif 'LSCYLO' in c2 or 'LS CYL' in c2:         cols_found['LSCYLO_R']  = j
+                    elif 'CYLO'   in c2 or 'CYL OIL' in c2:        cols_found['CYLO_R']    = j
                     elif 'GELO'   in c2:                           cols_found['GELO_R']    = j
             break
 
+    if header_idx == -1:
+        raise ValueError("Matrix Lock Failed: Could not locate a valid 'DATE' and 'PORT' anchor row.")
+
     df = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
+    
     for std_name, exc_idx in cols_found.items():
         df[std_name] = df.iloc[:, exc_idx]
 
     missing = [col for col in REQUIRED_RAW_COLS if col not in df.columns]
     for req in missing:
-        if req in ['FO_A','FO_L','MGO_A','MGO_L','MELO_R','HSCYLO_R','LSCYLO_R','GELO_R','CYLO_R']:
-            df[req] = np.nan
-        elif req in ['Voy','Port','AD','Date','Time']:
-            df[req] = ''
-        else:
-            df[req] = 0.0
+        df[req] = np.nan
+
+    # STAGE 2 & 3: LEXICAL SIEVE & NULLIFICATION PROTOCOL
+    MATH_COLS = [
+        'FO_A', 'FO_L', 'MGO_A', 'MGO_L', 'Bunk_FO', 'Bunk_MGO', 'Bunk_MELO', 
+        'Bunk_HSCYLO', 'Bunk_LSCYLO', 'Bunk_GELO', 'Bunk_CYLO', 'MELO_R', 
+        'HSCYLO_R', 'LSCYLO_R', 'GELO_R', 'CYLO_R', 'Speed', 'DistLeg', 
+        'TotalDist', 'CargoQty'
+    ]
+    for col in MATH_COLS:
+        df[col] = df[col].apply(_sn)
+
+    # STAGE 4: STRUCTURAL ANCHOR (Deterministic Casting for Strings)
+    STRING_COLS = ['Voy', 'Port', 'AD']
+    for col in STRING_COLS:
+        df[col] = df[col].fillna("").astype(str).str.strip()
 
     df['Datetime'] = df.apply(lambda r: _parse_dt(r.get('Date'), r.get('Time')), axis=1)
     df = df.dropna(subset=['Datetime']).sort_values('Datetime').reset_index(drop=True)
     df['AD'] = df['AD'].apply(
-        lambda v: 'D' if str(v).upper().strip() in ['D','DEP','SBE','FAOP']
-        else ('A' if str(v).upper().strip().startswith('A') else v)
+        lambda v: 'D' if v.upper() in ['D','DEP','SBE','FAOP']
+        else ('A' if v.upper().startswith('A') else v)
     )
     return df, vname
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TRI-STATE AD-TO-AD STATE MACHINE
+# TRI-STATE AD-TO-AD STATE MACHINE (WITH TRIANGULATION PROTOCOL)
 # ═══════════════════════════════════════════════════════════════════════════════
 def build_state_machine(df, min_speed, ghost_sea, ghost_port):
     ad_events = df[df['AD'].isin(['A', 'D'])].copy()
@@ -244,36 +266,38 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
             days = 0.02
             flags.append("Time Delta Fallback Applied")
 
-        start_rob, end_rob = _sn(r1.get('FO_A')), _sn(r2.get('FO_A'))
+        start_rob, end_rob = r1.get('FO_A'), r2.get('FO_A')
         if pd.isna(start_rob) or pd.isna(end_rob):
             status = 'QUARANTINE_ROB'
             flags.append("Missing Physical Tank Sounding")
 
         if r1['AD'] == 'D' and not pd.isna(start_rob):
-            fol = _sn(r1.get('FO_L'))
+            fol = r1.get('FO_L')
             cum_drift.append({
                 'dt':   r1['Datetime'],
                 'gap':  start_rob - (fol if not pd.isna(fol) else start_rob),
-                'port': str(r1.get('Port', ''))[:20]
+                'port': r1.get('Port', '')[:20]
             })
 
         window = df.loc[idx1 + 1:idx2]
+        
+        # Safe aggregation (MATH_COLS are guaranteed floats thanks to the Sieve)
         if phase == 'PORT':
-            bfo      = _sn0(df.loc[idx1:idx2, 'Bunk_FO'].sum())
-            b_melo   = _sn0(df.loc[idx1:idx2, 'Bunk_MELO'].sum())
-            b_hscylo = _sn0(df.loc[idx1:idx2, 'Bunk_HSCYLO'].sum())
-            b_lscylo = _sn0(df.loc[idx1:idx2, 'Bunk_LSCYLO'].sum())
-            b_cylo   = _sn0(df.loc[idx1:idx2, 'Bunk_CYLO'].sum())
-            b_gelo   = _sn0(df.loc[idx1:idx2, 'Bunk_GELO'].sum())
+            bfo      = df.loc[idx1:idx2, 'Bunk_FO'].sum(skipna=True)
+            b_melo   = df.loc[idx1:idx2, 'Bunk_MELO'].sum(skipna=True)
+            b_hscylo = df.loc[idx1:idx2, 'Bunk_HSCYLO'].sum(skipna=True)
+            b_lscylo = df.loc[idx1:idx2, 'Bunk_LSCYLO'].sum(skipna=True)
+            b_cylo   = df.loc[idx1:idx2, 'Bunk_CYLO'].sum(skipna=True)
+            b_gelo   = df.loc[idx1:idx2, 'Bunk_GELO'].sum(skipna=True)
         else:
-            bfo      = _sn0(window['Bunk_FO'].sum())
-            b_melo   = _sn0(window['Bunk_MELO'].sum())
-            b_hscylo = _sn0(window['Bunk_HSCYLO'].sum())
-            b_lscylo = _sn0(window['Bunk_LSCYLO'].sum())
-            b_cylo   = _sn0(window['Bunk_CYLO'].sum())
-            b_gelo   = _sn0(window['Bunk_GELO'].sum())
+            bfo      = window['Bunk_FO'].sum(skipna=True)
+            b_melo   = window['Bunk_MELO'].sum(skipna=True)
+            b_hscylo = window['Bunk_HSCYLO'].sum(skipna=True)
+            b_lscylo = window['Bunk_LSCYLO'].sum(skipna=True)
+            b_cylo   = window['Bunk_CYLO'].sum(skipna=True)
+            b_gelo   = window['Bunk_GELO'].sum(skipna=True)
 
-        dist  = _sn0(window['DistLeg'].sum())
+        dist  = window['DistLeg'].sum(skipna=True)
         if dist <= 0 and phase == 'SEA':
             dist = max(0, _sn0(r2.get('TotalDist')) - _sn0(r1.get('TotalDist')))
 
@@ -288,18 +312,34 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
         gelo_c     = max(0, (_sn0(r1.get('GELO_R'))   - _sn0(r2.get('GELO_R')))   + b_gelo)
 
         dqi = 0
-        if status == 'VERIFIED':
+        if status == 'VERIFIED' or status == 'VERIFIED': # Ensure it proceeds if only warnings exist
             phys_burn  = (start_rob - end_rob) + bfo
-            log_start  = _sn(r1.get('FO_L')) if not pd.isna(_sn(r1.get('FO_L'))) else start_rob
-            log_end    = _sn(r2.get('FO_L')) if not pd.isna(_sn(r2.get('FO_L'))) else end_rob
+            log_start  = r1.get('FO_L') if not pd.isna(r1.get('FO_L')) else start_rob
+            log_end    = r2.get('FO_L') if not pd.isna(r2.get('FO_L')) else end_rob
             log_burn   = (log_start - log_end) + bfo
             drift      = phys_burn - log_burn
             daily_burn = phys_burn / days
 
-            if phase == 'PORT' and phys_burn < ghost_port:
+            # 3.0 TRIANGULATION PROTOCOL: Physics Constraints
+            if bfo < 0:
+                status = 'QUARANTINE'
+                flags.append("Negative Bunker Input Detected")
+            
+            # Layer 2: Drift-Mirror Detection (Mass Imbalance)
+            if abs(drift) > 20 and abs(abs(drift) - abs(bfo)) < 5.0:
+                status = 'QUARANTINE'
+                flags.append("Mass Imbalance (Drift-Mirror Detection)")
+                
+            # Layer 1: MCR Physical Ceiling
+            if daily_burn > 250:
+                status = 'QUARANTINE'
+                flags.append("Thermodynamic Ceiling Exceeded (MCR Limit)")
+
+            # Standard 2.0 Ghost Checks
+            if phase == 'PORT' and phys_burn < ghost_port and 'QUARANTINE' not in status:
                 status = 'GHOST BUNKER'
                 flags.append("Missing Port Bunker Receipt")
-            elif phase == 'SEA' and phys_burn < ghost_sea:
+            elif phase == 'SEA' and phys_burn < ghost_sea and 'QUARANTINE' not in status:
                 status = 'GHOST BUNKER'
                 flags.append("Negative Sea Burn Impossibility")
 
@@ -314,9 +354,9 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
             'Date_Start_TS': r1['Datetime'],
             'Phase':        phase,
             'Condition':    'LADEN' if _sn0(r1.get('CargoQty', 0)) > 100 else 'BALLAST',
-            'Voy':          str(r1.get('Voy', '')).strip(),
-            'Route':        f"{str(r1.get('Port',''))[:15]} → {str(r2.get('Port',''))[:15]}"
-                            if phase == 'SEA' else f"Port Idle: {str(r1.get('Port',''))[:15]}",
+            'Voy':          r1.get('Voy', ''),
+            'Route':        f"{r1.get('Port','')[:15]} → {r2.get('Port','')[:15]}"
+                            if phase == 'SEA' else f"Port Idle: {r1.get('Port','')[:15]}",
             'Days':         round(days, 2),
             'Dist_NM':      round(dist, 0),
             'Speed_kn':     round(speed, 1),
@@ -391,7 +431,9 @@ def execute_ai_physics(trip_df, min_speed):
             raise ValueError(f"Insufficient valid Sea Legs ({sea_mask.sum()}). Minimum 8 required.")
 
         ml = trip_df.loc[sea_mask].copy()
-        ml['True_Mass']     = ml['CargoQty'].fillna(0) + ml['FO_A_Start'].fillna(0)
+        
+        # Clip True Mass strictly to prevent divide-by-zero or power errors
+        ml['True_Mass']     = (ml['CargoQty'].fillna(0) + ml['FO_A_Start'].fillna(0)).clip(lower=0.1)
         ml['SOG']           = ml['Dist_NM'] / np.maximum(ml['Days'] * 24, 0.1)
         ml['Kin_Delta']     = (ml['Speed_kn'] - ml['SOG']).clip(-3.0, 3.0)
         ml['Accel_Penalty'] = ml['Speed_kn'].diff().fillna(0.0).clip(-2.0, 2.0)
@@ -553,8 +595,6 @@ _BL = dict(
     font=dict(family='Hanken Grotesk', color='#f8fafc'),
     transition=dict(duration=800, easing='cubic-in-out')
 )
-# Default margin — used by charts that don't need a custom one.
-# Defined separately so per-chart overrides never collide with **_BL.
 _M = dict(l=15, r=15, t=85, b=30)
 _AX = dict(
     gridcolor='rgba(255,255,255,0.02)',
