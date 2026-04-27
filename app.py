@@ -106,9 +106,20 @@ def compute_dqi(r1, r2, days, phys_burn, drift, ghost_tol):
     return int(sum(scores) / len(scores))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# THE ROUTER: MULTI-BLOCK vs STANDARD DEEPEST LOCK
+# THE ROUTER: CONFIGURATION-DRIVEN MANIFEST MAPPING
 # ═══════════════════════════════════════════════════════════════════════════════
-MULTI_VERSION_VESSELS = ['COURAGE', 'CHRISTIANNA']
+# Hardcoded split lines where the earlier Excel template version begins.
+# (Includes duplicate naming conventions to ensure matching regardless of filename spacing)
+MULTI_VERSION_MAP = {
+    'COURAGE': 118,
+    'DIGNITY': 128,
+    'FALCON': 32,
+    'GEORGIAT': 175,
+    'GEORGIA T': 175,
+    'STEFANOST': 201,
+    'STEFANOS T': 201,
+    'CHRISTIANNA': 85
+}
 
 def _map_columns(top_header, bottom_header, num_cols):
     cols_found = {}
@@ -147,7 +158,7 @@ def _map_columns(top_header, bottom_header, num_cols):
     return cols_found
 
 def _parse_standard(df_raw):
-    """LANE 1: Deepest Lock. Fast parser for normal vessels."""
+    """LANE 1: Deepest Lock. Fast parser for normal vessels or pre-sliced chunks."""
     header_idx = -1
     cols_found = {}
     for i in range(min(150, len(df_raw))):
@@ -163,31 +174,33 @@ def _parse_standard(df_raw):
     for std_name, exc_idx in cols_found.items(): df[std_name] = df.iloc[:, exc_idx]
     return df
 
-def _parse_multiblock(df_raw):
-    """LANE 2: Horizontal Slicer. Captures all history for multi-version vessels."""
-    anchors = []
-    for i in range(len(df_raw)):
-        vals = [str(x).upper() for x in df_raw.iloc[i].values if pd.notna(x)]
-        if any(k in v for v in vals for k in ['DATE', 'DAY']) and any(k in v for v in vals for k in ['PORT', 'LOC']):
-            anchors.append(i)
-
-    if not anchors: raise ValueError("Multi-Block Lock Failed: No valid headers found.")
-
-    all_chunks = []
-    for idx, start_row in enumerate(anchors):
-        end_row = anchors[idx + 1] if idx + 1 < len(anchors) else len(df_raw)
-        top_header = df_raw.iloc[start_row].ffill()
-        bottom_header = df_raw.iloc[start_row + 1] if start_row + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
-        cols_found = _map_columns(top_header, bottom_header, len(df_raw.columns))
-        chunk_df = df_raw.iloc[start_row + 2 : end_row].copy().reset_index(drop=True)
+def _parse_multiblock(df_raw, split_row):
+    """LANE 2: Deterministic Manifest Slicer. Cuts file exactly at the configured row."""
+    # Convert Excel row coordinate to 0-based Pandas index (e.g., Row 118 -> Index 117)
+    idx = max(0, int(split_row) - 1)
+    
+    # Slice the file into two completely isolated islands
+    chunk_top = df_raw.iloc[:idx].copy().reset_index(drop=True)
+    chunk_bottom = df_raw.iloc[idx:].copy().reset_index(drop=True)
+    
+    dfs = []
+    
+    # Process the newer template at the top
+    try:
+        dfs.append(_parse_standard(chunk_top))
+    except ValueError:
+        pass # Ignored if the top chunk happens to be blank/invalid
         
-        if cols_found:
-            mapped_chunk = pd.DataFrame()
-            for std_name, exc_idx in cols_found.items(): mapped_chunk[std_name] = chunk_df.iloc[:, exc_idx]
-            all_chunks.append(mapped_chunk)
+    # Process the older template at the bottom
+    try:
+        dfs.append(_parse_standard(chunk_bottom))
+    except ValueError:
+        pass # Ignored if the bottom chunk happens to be blank/invalid
 
-    if not all_chunks: raise ValueError("Extraction Failed: No data chunks mapped.")
-    return pd.concat(all_chunks, ignore_index=True)
+    if not dfs: raise ValueError("Manifest Extraction Failed: Could not locate headers in either configured chunk.")
+    
+    # Vertically stack both templates (will be sorted by date later)
+    return pd.concat(dfs, ignore_index=True)
 
 def semantic_parse(file_bytes, file_name):
     vn_raw = re.sub(r'\.[^.]+$', '', file_name).strip()
@@ -200,8 +213,19 @@ def semantic_parse(file_bytes, file_name):
 
     if df_raw.empty or len(df_raw) < 4: raise ValueError("File is empty or severely malformed.")
 
-    is_multi_version = any(v in vname for v in MULTI_VERSION_VESSELS)
-    df = _parse_multiblock(df_raw) if is_multi_version else _parse_standard(df_raw)
+    # Manifest Router Logic
+    is_multi_version = False
+    split_row = 0
+    for vessel, row in MULTI_VERSION_MAP.items():
+        if vessel in vname:
+            is_multi_version = True
+            split_row = row
+            break
+
+    if is_multi_version:
+        df = _parse_multiblock(df_raw, split_row)
+    else:
+        df = _parse_standard(df_raw)
 
     missing = [col for col in REQUIRED_RAW_COLS if col not in df.columns]
     for req in missing: df[req] = np.nan
