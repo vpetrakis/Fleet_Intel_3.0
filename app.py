@@ -33,7 +33,7 @@ st.set_page_config(
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CSS LOADER — Path-anchored, bulletproof on Streamlit Cloud
+# CSS LOADER
 # ═══════════════════════════════════════════════════════════════════════════════
 def load_local_css():
     css_path = Path(__file__).parent / "assets" / "style.css"
@@ -89,11 +89,11 @@ fleet_db = load_fleet_master()
 # FORENSIC UTILITIES & LEXICAL SIEVE
 # ═══════════════════════════════════════════════════════════════════════════════
 def _sn(val):
-    """The 3.0 Lexical Sieve & Nullification Protocol"""
+    """The Lexical Sieve & Nullification Protocol"""
     if pd.isna(val): return np.nan
     s = str(val).strip().upper()
     
-    # Predefined Burn List for "Silent Strings"
+    # Predefined Burn List for "Silent Strings" & Odometer "XXX"
     if s in ['NIL', 'N/A', 'NA', 'XXX', 'NONE', 'UNKNOWN', 'BLANK', '-', 'X', '', 'NULL']:
         return np.nan
         
@@ -145,33 +145,34 @@ def compute_dqi(r1, r2, days, phys_burn, drift, ghost_tol):
     return int(sum(scores) / len(scores))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SEMANTIC INGESTION & DECONTAMINATION CHAMBER
+# SEMANTIC INGESTION: RAW TEXT ARMOR & GRAVITY LOCK
 # ═══════════════════════════════════════════════════════════════════════════════
 def semantic_parse(file_bytes, file_name):
     vn_raw = re.sub(r'\.[^.]+$', '', file_name).strip()
     vname  = re.sub(r'[_\-]+', ' ', vn_raw).upper()
 
+    # RAW TEXT ARMOR: Ingest strictly as str to bypass openpyxl formatting crashes
     if file_name.lower().endswith('.xlsx'):
-        df_raw = pd.read_excel(io.BytesIO(file_bytes), header=None, engine='openpyxl')
+        df_raw = pd.read_excel(io.BytesIO(file_bytes), header=None, engine='openpyxl', dtype=str)
     else:
         df_raw = pd.read_csv(
             io.StringIO(file_bytes.decode('latin-1', errors='replace')),
-            header=None, on_bad_lines='skip'
+            header=None, on_bad_lines='skip', dtype=str
         )
 
     if df_raw.empty or len(df_raw) < 4:
         raise ValueError("File is empty or severely malformed.")
 
-    # STAGE 1: THE GRAVITY LOCK (Universal Data Density Algorithm)
+    # GRAVITY LOCK: Universal Data Density Algorithm
     candidates = []
     for i in range(min(150, len(df_raw))):
         vals = [str(x).upper() for x in df_raw.iloc[i].values if pd.notna(x)]
         if any(k in v for v in vals for k in ['DATE', 'DAY']) and \
            any(k in v for v in vals for k in ['PORT', 'LOC']):
             
-            top_header   = df_raw.iloc[i].ffill()
+            top_header    = df_raw.iloc[i].ffill()
             bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
-            cols_found = {}
+            cols_found    = {}
 
             # Map the columns for this specific candidate
             for j in range(len(df_raw.columns)):
@@ -207,29 +208,25 @@ def semantic_parse(file_bytes, file_name):
                     elif 'CYLO'   in c2 or 'CYL OIL' in c2:        cols_found['CYLO_R']    = j
                     elif 'GELO'   in c2:                           cols_found['GELO_R']    = j
             
-            # THE LITMUS TEST: Measure the "Gravity" (Data Density) of this header
+            # LITMUS TEST: Measure the "Gravity" (Data Density) of this header candidate
             valid_count = 0
             if 'Date' in cols_found:
                 date_idx = cols_found['Date']
                 time_idx = cols_found.get('Time', -1)
-                test_rows = df_raw.iloc[i + 2 : i + 32] # Sample the next 30 rows
+                test_rows = df_raw.iloc[i + 2 : i + 32] # Sample the 30 rows beneath
                 for _, row in test_rows.iterrows():
                     d_val = row.iloc[date_idx] if date_idx < len(row) else np.nan
                     t_val = row.iloc[time_idx] if time_idx != -1 and time_idx < len(row) else "00:00"
                     if pd.notna(_parse_dt(d_val, t_val)):
-                        valid_count += 1 # We found a real, mathematical date!
+                        valid_count += 1 
             
-            candidates.append({
-                'idx': i,
-                'cols': cols_found,
-                'gravity': valid_count
-            })
+            candidates.append({'idx': i, 'cols': cols_found, 'gravity': valid_count})
 
     if not candidates:
         raise ValueError("Matrix Lock Failed: Could not locate any valid 'DATE' and 'PORT' anchor.")
 
-    # The winner is mathematically defined as the header with the highest gravity
-    winner = max(candidates, key=lambda x: x['gravity'])
+    # Mathematical Winner: The header with the highest valid density
+    winner     = max(candidates, key=lambda x: x['gravity'])
     header_idx = winner['idx']
     cols_found = winner['cols']
 
@@ -242,7 +239,7 @@ def semantic_parse(file_bytes, file_name):
     for req in missing:
         df[req] = np.nan
 
-    # STAGE 2 & 3: LEXICAL SIEVE & NULLIFICATION PROTOCOL
+    # LEXICAL SIEVE 
     MATH_COLS = [
         'FO_A', 'FO_L', 'MGO_A', 'MGO_L', 'Bunk_FO', 'Bunk_MGO', 'Bunk_MELO', 
         'Bunk_HSCYLO', 'Bunk_LSCYLO', 'Bunk_GELO', 'Bunk_CYLO', 'MELO_R', 
@@ -252,12 +249,11 @@ def semantic_parse(file_bytes, file_name):
     for col in MATH_COLS:
         df[col] = df[col].apply(_sn)
 
-    # STAGE 4: STRUCTURAL ANCHOR (Strictly type-cast strings to prevent crashes)
+    # STRUCTURAL ANCHOR: Prevent float/str crashes
     STRING_COLS = ['Voy', 'Port', 'AD', 'Date', 'Time']
     for col in STRING_COLS:
         df[col] = df[col].fillna("").astype(str).str.strip()
 
-    # Final Decontamination: Vaporize any remaining garbage gaps
     df['Datetime'] = df.apply(lambda r: _parse_dt(r.get('Date'), r.get('Time')), axis=1)
     df = df.dropna(subset=['Datetime']).sort_values('Datetime').reset_index(drop=True)
     df['AD'] = df['AD'].apply(
@@ -267,7 +263,7 @@ def semantic_parse(file_bytes, file_name):
     return df, vname
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TRI-STATE AD-TO-AD STATE MACHINE (WITH TRIANGULATION PROTOCOL)
+# TRI-STATE AD-TO-AD STATE MACHINE (KINEMATIC IMPUTATION PROTOCOL)
 # ═══════════════════════════════════════════════════════════════════════════════
 def build_state_machine(df, min_speed, ghost_sea, ghost_port):
     ad_events = df[df['AD'].isin(['A', 'D'])].copy()
@@ -305,7 +301,7 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
 
         window = df.loc[idx1 + 1:idx2]
         
-        # Safe aggregation (MATH_COLS are guaranteed floats thanks to the Sieve)
+        # Safe aggregation (MATH_COLS are guaranteed floats)
         if phase == 'PORT':
             bfo      = df.loc[idx1:idx2, 'Bunk_FO'].sum(skipna=True)
             b_melo   = df.loc[idx1:idx2, 'Bunk_MELO'].sum(skipna=True)
@@ -321,11 +317,19 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
             b_cylo   = window['Bunk_CYLO'].sum(skipna=True)
             b_gelo   = window['Bunk_GELO'].sum(skipna=True)
 
-        dist  = window['DistLeg'].sum(skipna=True)
-        if dist <= 0 and phase == 'SEA':
-            dist = max(0, _sn0(r2.get('TotalDist')) - _sn0(r1.get('TotalDist')))
-
         speed = window['Speed'].replace(0, np.nan).mean() if not window['Speed'].empty else np.nan
+        dist  = window['DistLeg'].sum(skipna=True)
+
+        # THE "XXX" ODOMETER FALLBACK (Kinematic Imputation)
+        if dist <= 0 and phase == 'SEA':
+            # Attempt to use difference of total odometers first
+            dist = max(0, _sn0(r2.get('TotalDist')) - _sn0(r1.get('TotalDist')))
+            
+            # If both are missing ("XXX" -> 0), impute physically from speed and time
+            if dist <= 0 and not pd.isna(speed):
+                dist = speed * (days * 24.0)
+                flags.append("Distance Imputed from Speed/Time Kinematics")
+
         if pd.isna(speed):
             speed = dist / (days * 24.0) if days > 0 else 0.0
 
@@ -336,7 +340,7 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
         gelo_c     = max(0, (_sn0(r1.get('GELO_R'))   - _sn0(r2.get('GELO_R')))   + b_gelo)
 
         dqi = 0
-        if status == 'VERIFIED' or status == 'VERIFIED': # Ensure it proceeds if only warnings exist
+        if status == 'VERIFIED' or status == 'VERIFIED': 
             phys_burn  = (start_rob - end_rob) + bfo
             log_start  = r1.get('FO_L') if not pd.isna(r1.get('FO_L')) else start_rob
             log_end    = r2.get('FO_L') if not pd.isna(r2.get('FO_L')) else end_rob
@@ -344,22 +348,19 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
             drift      = phys_burn - log_burn
             daily_burn = phys_burn / days
 
-            # 3.0 TRIANGULATION PROTOCOL: Physics Constraints
+            # TRIANGULATION PROTOCOL: Physics Constraints
             if bfo < 0:
                 status = 'QUARANTINE'
                 flags.append("Negative Bunker Input Detected")
             
-            # Layer 2: Drift-Mirror Detection (Mass Imbalance)
             if abs(drift) > 20 and abs(abs(drift) - abs(bfo)) < 5.0:
                 status = 'QUARANTINE'
                 flags.append("Mass Imbalance (Drift-Mirror Detection)")
                 
-            # Layer 1: MCR Physical Ceiling
             if daily_burn > 250:
                 status = 'QUARANTINE'
                 flags.append("Thermodynamic Ceiling Exceeded (MCR Limit)")
 
-            # Standard 2.0 Ghost Checks
             if phase == 'PORT' and phys_burn < ghost_port and 'QUARANTINE' not in status:
                 status = 'GHOST BUNKER'
                 flags.append("Missing Port Bunker Receipt")
@@ -456,7 +457,6 @@ def execute_ai_physics(trip_df, min_speed):
 
         ml = trip_df.loc[sea_mask].copy()
         
-        # Clip True Mass strictly to prevent divide-by-zero or power errors
         ml['True_Mass']     = (ml['CargoQty'].fillna(0) + ml['FO_A_Start'].fillna(0)).clip(lower=0.1)
         ml['SOG']           = ml['Dist_NM'] / np.maximum(ml['Days'] * 24, 0.1)
         ml['Kin_Delta']     = (ml['Speed_kn'] - ml['SOG']).clip(-3.0, 3.0)
@@ -514,7 +514,6 @@ def execute_ai_physics(trip_df, min_speed):
         q90   = np.quantile(conformal_scores, q_val)
         stoch_margin = np.maximum(var_model.predict(X_train) * q90, 0.5)
 
-        # Empirical p-values
         p_vals = []
         for i, row_idx in enumerate(ml.index):
             current_score     = np.abs(ml.loc[row_idx, 'Daily_Burn'] - preds.iloc[i]) / var_preds_train[i]
@@ -529,7 +528,6 @@ def execute_ai_physics(trip_df, min_speed):
         trip_df.loc[sea_mask, 'Mahalanobis']  = md
         trip_df.loc[sea_mask, 'MD_Threshold'] = np.percentile(md, 95)
 
-        # SHAP
         explainer = shap.TreeExplainer(model)
         sv        = explainer.shap_values(X_train)
         base_val  = explainer.expected_value[0] \
