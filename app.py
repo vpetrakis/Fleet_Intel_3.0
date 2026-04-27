@@ -162,16 +162,18 @@ def semantic_parse(file_bytes, file_name):
     if df_raw.empty or len(df_raw) < 4:
         raise ValueError("File is empty or severely malformed.")
 
-    # STAGE 1: THE MATRIX LOCK (Bypass Template Metadata)
-    header_idx, cols_found = -1, {}
+    # STAGE 1: THE GRAVITY LOCK (Universal Data Density Algorithm)
+    candidates = []
     for i in range(min(150, len(df_raw))):
         vals = [str(x).upper() for x in df_raw.iloc[i].values if pd.notna(x)]
         if any(k in v for v in vals for k in ['DATE', 'DAY']) and \
            any(k in v for v in vals for k in ['PORT', 'LOC']):
-            header_idx   = i
+            
             top_header   = df_raw.iloc[i].ffill()
             bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
+            cols_found = {}
 
+            # Map the columns for this specific candidate
             for j in range(len(df_raw.columns)):
                 c1 = str(top_header.iloc[j]).upper().strip()   if pd.notna(top_header.iloc[j])   else ""
                 c2 = str(bottom_header.iloc[j]).upper().strip() if pd.notna(bottom_header.iloc[j]) else ""
@@ -179,8 +181,7 @@ def semantic_parse(file_bytes, file_name):
 
                 if   'VOY'  in c_comb:                             cols_found['Voy']       = j
                 elif 'PORT' in c_comb or 'LOC' in c_comb:          cols_found['Port']      = j
-                elif 'A/D'  in c_comb or c_comb == 'AD' or 'STATUS' in c_comb:
-                                                                   cols_found['AD']        = j
+                elif 'A/D'  in c_comb or c_comb == 'AD' or 'STATUS' in c_comb: cols_found['AD'] = j
                 elif 'SPEED' in c_comb:                            cols_found['Speed']     = j
                 elif 'CARGO' in c_comb or 'QTY' in c_comb:         cols_found['CargoQty']  = j
                 elif 'DATE'  in c_comb or 'DAY' in c_comb:         cols_found['Date']      = j
@@ -205,10 +206,32 @@ def semantic_parse(file_bytes, file_name):
                     elif 'LSCYLO' in c2 or 'LS CYL' in c2:         cols_found['LSCYLO_R']  = j
                     elif 'CYLO'   in c2 or 'CYL OIL' in c2:        cols_found['CYLO_R']    = j
                     elif 'GELO'   in c2:                           cols_found['GELO_R']    = j
-            break
+            
+            # THE LITMUS TEST: Measure the "Gravity" (Data Density) of this header
+            valid_count = 0
+            if 'Date' in cols_found:
+                date_idx = cols_found['Date']
+                time_idx = cols_found.get('Time', -1)
+                test_rows = df_raw.iloc[i + 2 : i + 32] # Sample the next 30 rows
+                for _, row in test_rows.iterrows():
+                    d_val = row.iloc[date_idx] if date_idx < len(row) else np.nan
+                    t_val = row.iloc[time_idx] if time_idx != -1 and time_idx < len(row) else "00:00"
+                    if pd.notna(_parse_dt(d_val, t_val)):
+                        valid_count += 1 # We found a real, mathematical date!
+            
+            candidates.append({
+                'idx': i,
+                'cols': cols_found,
+                'gravity': valid_count
+            })
 
-    if header_idx == -1:
-        raise ValueError("Matrix Lock Failed: Could not locate a valid 'DATE' and 'PORT' anchor row.")
+    if not candidates:
+        raise ValueError("Matrix Lock Failed: Could not locate any valid 'DATE' and 'PORT' anchor.")
+
+    # The winner is mathematically defined as the header with the highest gravity
+    winner = max(candidates, key=lambda x: x['gravity'])
+    header_idx = winner['idx']
+    cols_found = winner['cols']
 
     df = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
     
@@ -229,11 +252,12 @@ def semantic_parse(file_bytes, file_name):
     for col in MATH_COLS:
         df[col] = df[col].apply(_sn)
 
-    # STAGE 4: STRUCTURAL ANCHOR (Deterministic Casting for Strings)
-    STRING_COLS = ['Voy', 'Port', 'AD']
+    # STAGE 4: STRUCTURAL ANCHOR (Strictly type-cast strings to prevent crashes)
+    STRING_COLS = ['Voy', 'Port', 'AD', 'Date', 'Time']
     for col in STRING_COLS:
         df[col] = df[col].fillna("").astype(str).str.strip()
 
+    # Final Decontamination: Vaporize any remaining garbage gaps
     df['Datetime'] = df.apply(lambda r: _parse_dt(r.get('Date'), r.get('Time')), axis=1)
     df = df.dropna(subset=['Datetime']).sort_values('Datetime').reset_index(drop=True)
     df['AD'] = df['AD'].apply(
