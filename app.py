@@ -7,7 +7,6 @@ import math
 import traceback
 import base64
 import warnings
-import os
 from pathlib import Path
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -110,7 +109,7 @@ def _sn0(val):
 
 def _parse_dt(d_val, t_val):
     try:
-        if pd.isna(d_val): return pd.NaT
+        if pd.isna(d_val) or str(d_val).strip() == '': return pd.NaT
         ds = str(d_val).strip()
         ds = re.sub(r'20224', '2024', ds)
         ds = re.sub(r'20023', '2023', ds)
@@ -122,7 +121,7 @@ def _parse_dt(d_val, t_val):
         if pd.isna(p): return pd.NaT
         d_str = p.strftime('%Y-%m-%d')
         t_str = '00:00'
-        if not pd.isna(t_val):
+        if pd.notna(t_val) and str(t_val).strip() != '':
             tr = re.sub(r'[HhLlTtUuCc\s]', '', str(t_val).strip())
             m = re.match(r'^(\d{1,2}):(\d{2})', tr)
             if m: t_str = f"{m.group(1).zfill(2)}:{m.group(2)}"
@@ -322,7 +321,6 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
 
         # THE "XXX" ODOMETER FALLBACK (Kinematic Imputation)
         if dist <= 0 and phase == 'SEA':
-            # Attempt to use difference of total odometers first
             dist = max(0, _sn0(r2.get('TotalDist')) - _sn0(r1.get('TotalDist')))
             
             # If both are missing ("XXX" -> 0), impute physically from speed and time
@@ -340,7 +338,7 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
         gelo_c     = max(0, (_sn0(r1.get('GELO_R'))   - _sn0(r2.get('GELO_R')))   + b_gelo)
 
         dqi = 0
-        if status == 'VERIFIED' or status == 'VERIFIED': 
+        if status == 'VERIFIED' or 'QUARANTINE' not in status: 
             phys_burn  = (start_rob - end_rob) + bfo
             log_start  = r1.get('FO_L') if not pd.isna(r1.get('FO_L')) else start_rob
             log_end    = r2.get('FO_L') if not pd.isna(r2.get('FO_L')) else end_rob
