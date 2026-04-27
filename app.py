@@ -33,8 +33,6 @@ def load_local_css():
     css_path = Path(__file__).parent / "assets" / "style.css"
     if css_path.exists():
         st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
-    else:
-        st.warning(f"⚠️ CSS not found at: {css_path} — Ensure your assets folder is present.")
 
 load_local_css()
 
@@ -108,9 +106,11 @@ def compute_dqi(r1, r2, days, phys_burn, drift, ghost_tol):
 # ═══════════════════════════════════════════════════════════════════════════════
 # THE ROUTER: MULTI-BLOCK vs STANDARD DEEPEST LOCK
 # ═══════════════════════════════════════════════════════════════════════════════
+# Define the known multi-version vessels here.
 MULTI_VERSION_VESSELS = ['COURAGE', 'CHRISTIANNA']
 
 def _map_columns(top_header, bottom_header, num_cols):
+    """Centralized column mapping dictionary to keep code DRY."""
     cols_found = {}
     for j in range(num_cols):
         c1 = str(top_header.iloc[j]).upper().strip()   if pd.notna(top_header.iloc[j])   else ""
@@ -147,7 +147,7 @@ def _map_columns(top_header, bottom_header, num_cols):
     return cols_found
 
 def _parse_standard(df_raw):
-    """LANE 1: Deepest Lock. Fast parser for normal vessels."""
+    """LANE 1: Deepest Lock. Scans for the absolute newest/bottom table and drops the rest."""
     header_idx = -1
     cols_found = {}
     for i in range(min(150, len(df_raw))):
@@ -157,14 +157,16 @@ def _parse_standard(df_raw):
             top_header = df_raw.iloc[i].ffill()
             bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
             cols_found = _map_columns(top_header, bottom_header, len(df_raw.columns))
+            # No break. Let it find the deepest one.
 
     if header_idx == -1: raise ValueError("Standard Lock Failed: No valid headers found.")
+    
     df = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
     for std_name, exc_idx in cols_found.items(): df[std_name] = df.iloc[:, exc_idx]
     return df
 
 def _parse_multiblock(df_raw):
-    """LANE 2: Horizontal Slicer. Captures all history for multi-version vessels."""
+    """LANE 2: Horizontal Slicer. Identifies every template chunk, extracts, and assembles chronologically."""
     anchors = []
     for i in range(len(df_raw)):
         vals = [str(x).upper() for x in df_raw.iloc[i].values if pd.notna(x)]
@@ -178,6 +180,7 @@ def _parse_multiblock(df_raw):
         end_row = anchors[idx + 1] if idx + 1 < len(anchors) else len(df_raw)
         top_header = df_raw.iloc[start_row].ffill()
         bottom_header = df_raw.iloc[start_row + 1] if start_row + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
+        
         cols_found = _map_columns(top_header, bottom_header, len(df_raw.columns))
         chunk_df = df_raw.iloc[start_row + 2 : end_row].copy().reset_index(drop=True)
         
@@ -190,6 +193,7 @@ def _parse_multiblock(df_raw):
     return pd.concat(all_chunks, ignore_index=True)
 
 def semantic_parse(file_bytes, file_name):
+    """THE FRONT DOOR: Raw text ingestion & Exception Routing"""
     vn_raw = re.sub(r'\.[^.]+$', '', file_name).strip()
     vname  = re.sub(r'[_\-]+', ' ', vn_raw).upper()
 
@@ -200,9 +204,14 @@ def semantic_parse(file_bytes, file_name):
 
     if df_raw.empty or len(df_raw) < 4: raise ValueError("File is empty or severely malformed.")
 
+    # ROUTING LOGIC
     is_multi_version = any(v in vname for v in MULTI_VERSION_VESSELS)
-    df = _parse_multiblock(df_raw) if is_multi_version else _parse_standard(df_raw)
+    if is_multi_version:
+        df = _parse_multiblock(df_raw)
+    else:
+        df = _parse_standard(df_raw)
 
+    # UNIFIED STANDARDIZATION 
     missing = [col for col in REQUIRED_RAW_COLS if col not in df.columns]
     for req in missing: df[req] = np.nan
 
@@ -215,6 +224,7 @@ def semantic_parse(file_bytes, file_name):
     df['Datetime'] = df.apply(lambda r: _parse_dt(r.get('Date'), r.get('Time')), axis=1)
     df = df.dropna(subset=['Datetime']).sort_values('Datetime').reset_index(drop=True)
     df['AD'] = df['AD'].apply(lambda v: 'D' if v.upper() in ['D','DEP','SBE','FAOP'] else ('A' if v.upper().startswith('A') else v))
+    
     return df, vname
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -229,23 +239,28 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
 
     trips, cum_drift = [], []
     for i in range(len(ad_events) - 1):
-        r1, r2 = ad_events.iloc[i], ad_events.iloc[i + 1]
+        r1, r2   = ad_events.iloc[i], ad_events.iloc[i + 1]
         idx1, idx2 = r1.name, r2.name
         status, flags = 'VERIFIED', []
         phys_burn, log_burn, drift, daily_burn, days = np.nan, np.nan, np.nan, np.nan, 0.0
 
         phase = 'SEA' if r1['AD'] == 'D' else 'PORT'
-        days = (r2['Datetime'] - r1['Datetime']).total_seconds() / 86400.0
-        if days <= 0: days, flags = 0.02, flags + ["Time Delta Fallback"]
+        days  = (r2['Datetime'] - r1['Datetime']).total_seconds() / 86400.0
+        if days <= 0:
+            days = 0.02
+            flags.append("Time Delta Fallback Applied")
 
         start_rob, end_rob = r1.get('FO_A'), r2.get('FO_A')
-        if pd.isna(start_rob) or pd.isna(end_rob): status, flags = 'QUARANTINE_ROB', flags + ["Missing Sounding"]
+        if pd.isna(start_rob) or pd.isna(end_rob):
+            status = 'QUARANTINE_ROB'
+            flags.append("Missing Physical Tank Sounding")
 
         if r1['AD'] == 'D' and not pd.isna(start_rob):
             fol = r1.get('FO_L')
             cum_drift.append({'dt': r1['Datetime'], 'gap': start_rob - (fol if not pd.isna(fol) else start_rob), 'port': r1.get('Port', '')[:20]})
 
         window = df.loc[idx1 + 1:idx2]
+        
         if phase == 'PORT':
             bfo = df.loc[idx1:idx2, 'Bunk_FO'].sum(skipna=True)
             b_melo = df.loc[idx1:idx2, 'Bunk_MELO'].sum(skipna=True)
@@ -262,43 +277,45 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
             b_gelo = window['Bunk_GELO'].sum(skipna=True)
 
         speed = window['Speed'].replace(0, np.nan).mean() if not window['Speed'].empty else np.nan
-        dist = window['DistLeg'].sum(skipna=True)
+        dist  = window['DistLeg'].sum(skipna=True)
 
+        # "XXX" ODOMETER FALLBACK (Kinematic Imputation)
         if dist <= 0 and phase == 'SEA':
             dist = max(0, _sn0(r2.get('TotalDist')) - _sn0(r1.get('TotalDist')))
             if dist <= 0 and not pd.isna(speed):
                 dist = speed * (days * 24.0)
-                flags.append("Distance Imputed from Kinematics")
+                flags.append("Distance Imputed from Speed/Time Kinematics")
 
         if pd.isna(speed): speed = dist / (days * 24.0) if days > 0 else 0.0
 
-        melo_c = max(0, (_sn0(r1.get('MELO_R')) - _sn0(r2.get('MELO_R'))) + b_melo)
-        hscylo_c = max(0, (_sn0(r1.get('HSCYLO_R')) - _sn0(r2.get('HSCYLO_R'))) + b_hscylo)
-        lscylo_c = max(0, (_sn0(r1.get('LSCYLO_R')) - _sn0(r2.get('LSCYLO_R'))) + b_lscylo)
-        cylo_gen_c = max(0, (_sn0(r1.get('CYLO_R')) - _sn0(r2.get('CYLO_R'))) + b_cylo)
-        gelo_c = max(0, (_sn0(r1.get('GELO_R')) - _sn0(r2.get('GELO_R'))) + b_gelo)
+        melo_c     = max(0, (_sn0(r1.get('MELO_R'))   - _sn0(r2.get('MELO_R')))   + b_melo)
+        hscylo_c   = max(0, (_sn0(r1.get('HSCYLO_R')) - _sn0(r2.get('HSCYLO_R'))) + b_hscylo)
+        lscylo_c   = max(0, (_sn0(r1.get('LSCYLO_R')) - _sn0(r2.get('LSCYLO_R'))) + b_lscylo)
+        cylo_gen_c = max(0, (_sn0(r1.get('CYLO_R'))   - _sn0(r2.get('CYLO_R')))   + b_cylo)
+        gelo_c     = max(0, (_sn0(r1.get('GELO_R'))   - _sn0(r2.get('GELO_R')))   + b_gelo)
 
         dqi = 0
         if status == 'VERIFIED' or 'QUARANTINE' not in status: 
-            phys_burn = (start_rob - end_rob) + bfo
-            log_start = r1.get('FO_L') if not pd.isna(r1.get('FO_L')) else start_rob
-            log_end = r2.get('FO_L') if not pd.isna(r2.get('FO_L')) else end_rob
-            log_burn = (log_start - log_end) + bfo
-            drift = phys_burn - log_burn
+            phys_burn  = (start_rob - end_rob) + bfo
+            log_start  = r1.get('FO_L') if not pd.isna(r1.get('FO_L')) else start_rob
+            log_end    = r2.get('FO_L') if not pd.isna(r2.get('FO_L')) else end_rob
+            log_burn   = (log_start - log_end) + bfo
+            drift      = phys_burn - log_burn
             daily_burn = phys_burn / days
 
             if bfo < 0: status, flags = 'QUARANTINE', flags + ["Negative Bunker Input"]
             if abs(drift) > 20 and abs(abs(drift) - abs(bfo)) < 5.0: status, flags = 'QUARANTINE', flags + ["Mass Imbalance"]
             if daily_burn > 250: status, flags = 'QUARANTINE', flags + ["MCR Limit Exceeded"]
             if phase == 'PORT' and phys_burn < ghost_port and 'QUARANTINE' not in status: status, flags = 'GHOST BUNKER', flags + ["Missing Receipt"]
-            elif phase == 'SEA' and phys_burn < ghost_sea and 'QUARANTINE' not in status: status, flags = 'GHOST BUNKER', flags + ["Negative Burn"]
+            elif phase == 'SEA' and phys_burn < ghost_sea and 'QUARANTINE' not in status: status, flags = 'GHOST BUNKER', flags + ["Negative Burn Impossibility"]
 
             dqi = compute_dqi(r1, r2, days, phys_burn, drift, ghost_tol=(ghost_port if phase == 'PORT' else ghost_sea))
 
         trips.append({
             'Indicator': ICONS.get(status, ICONS['VERIFIED']) if 'QUARANTINE' not in status else '⛔',
             'Timeline': f"{r1['Datetime'].strftime('%d %b %y')} → {r2['Datetime'].strftime('%d %b %y')}",
-            'Date_Start_TS': r1['Datetime'], 'Phase': phase, 'Condition': 'LADEN' if _sn0(r1.get('CargoQty', 0)) > 100 else 'BALLAST',
+            'Date_Start_TS': r1['Datetime'],
+            'Phase': phase, 'Condition': 'LADEN' if _sn0(r1.get('CargoQty', 0)) > 100 else 'BALLAST',
             'Voy': r1.get('Voy', ''), 'Route': f"{r1.get('Port','')[:15]} → {r2.get('Port','')[:15]}" if phase == 'SEA' else f"Port Idle: {r1.get('Port','')[:15]}",
             'Days': round(days, 2), 'Dist_NM': round(dist, 0), 'Speed_kn': round(speed, 1), 'CargoQty': _sn0(r1.get('CargoQty', 0)),
             'FO_A_Start': start_rob if status == 'VERIFIED' else np.nan, 'Bunk_FO': bfo, 'FO_A_End': end_rob if status == 'VERIFIED' else np.nan,
@@ -310,6 +327,7 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
         })
 
     trip_df = pd.DataFrame(trips)
+
     if len(trip_df) >= 4:
         for cond in ['LADEN', 'BALLAST']:
             ver = trip_df[(trip_df['Status'] == 'VERIFIED') & (trip_df['Phase'] == 'SEA') & (trip_df['Phys_Burn'] > 0) & (trip_df['Condition'] == cond)]
@@ -329,16 +347,15 @@ def build_state_machine(df, min_speed, ghost_sea, ghost_port):
 # ═══════════════════════════════════════════════════════════════════════════════
 def execute_ai_physics(trip_df, min_speed):
     ai_status_msg = "Enterprise AI Optimized."
-    if not HAS_ML: return trip_df, "AI Offline: Missing sklearn/xgboost."
+    if not HAS_ML: return trip_df, "AI Offline: Missing scikit-learn or xgboost."
     if trip_df.empty: return trip_df, "AI Offline: Empty ledger."
 
-    cols_to_add = ['AI_Exp','HM_Base','Stoch_Var','SHAP_Base','SHAP_Propulsion','SHAP_Mass','SHAP_Kinematics','SHAP_Season','SHAP_Degradation','Exp_Lower','Exp_Upper','Mahalanobis','MD_Threshold','P_Value']
-    for col in cols_to_add:
+    for col in ['AI_Exp','HM_Base','Stoch_Var','SHAP_Base','SHAP_Propulsion','SHAP_Mass','SHAP_Kinematics','SHAP_Season','SHAP_Degradation','Exp_Lower','Exp_Upper','Mahalanobis','MD_Threshold','P_Value']:
         if col not in trip_df.columns: trip_df[col] = np.nan
 
     try:
         sea_mask = (trip_df['Phase'] == 'SEA') & (trip_df['Status'] == 'VERIFIED') & (trip_df['Speed_kn'] >= min_speed)
-        if sea_mask.sum() < 8: raise ValueError(f"Insufficient valid Sea Legs ({sea_mask.sum()}). Min 8 req.")
+        if sea_mask.sum() < 8: raise ValueError(f"Insufficient valid Sea Legs ({sea_mask.sum()}). Minimum 8 required.")
 
         ml = trip_df.loc[sea_mask].copy()
         ml['True_Mass'] = (ml['CargoQty'].fillna(0) + ml['FO_A_Start'].fillna(0)).clip(lower=0.1)
@@ -356,12 +373,14 @@ def execute_ai_physics(trip_df, min_speed):
         ml[features] = ml[features].fillna(0.0)
 
         k_array = ml['Daily_Burn'] / ((ml['True_Mass'] ** (2/3)) * ml['Speed_Cubed'] + 1e-6)
-        best_k = np.median(k_array[k_array <= np.percentile(k_array, 25)])
+        q25 = np.percentile(k_array, 25)
+        best_k = np.median(k_array[k_array <= q25])
         ml['HM_Base'] = best_k * (ml['True_Mass'] ** (2/3)) * ml['Speed_Cubed']
         trip_df.loc[sea_mask, 'HM_Base'] = ml['HM_Base']
 
         y_delta = ml['Daily_Burn'] - ml['HM_Base']
-        X_train, weights = ml[features], ml['Days'].clip(0.1, 30.0)
+        X_train = ml[features]
+        weights = ml['Days'].clip(0.1, 30.0)
         if y_delta.var() < 0.05: raise ValueError("Target variance too low.")
 
         kf = KFold(n_splits=min(5, len(X_train)), shuffle=True, random_state=42)
@@ -372,18 +391,26 @@ def execute_ai_physics(trip_df, min_speed):
             oof_preds[val_idx] = m.predict(X_train.iloc[val_idx])
 
         oof_residuals = np.abs(y_delta - oof_preds)
-        model = XGBRegressor(n_estimators=100, max_depth=3, learning_rate=0.06, random_state=42).fit(X_train, y_delta, sample_weight=weights)
+
+        model = XGBRegressor(n_estimators=100, max_depth=3, learning_rate=0.06, random_state=42)
+        model.fit(X_train, y_delta, sample_weight=weights)
         preds = ml['HM_Base'] + model.predict(X_train)
 
-        var_model = XGBRegressor(n_estimators=40, max_depth=2, learning_rate=0.05, random_state=42).fit(X_train, oof_residuals, sample_weight=weights)
+        var_model = XGBRegressor(n_estimators=40, max_depth=2, learning_rate=0.05, random_state=42)
+        var_model.fit(X_train, oof_residuals, sample_weight=weights)
         var_preds_train = np.maximum(var_model.predict(X_train), 0.01)
         conformal_scores = oof_residuals / var_preds_train
 
         n = len(conformal_scores)
-        q90 = np.quantile(conformal_scores, min(1.0, np.ceil((n + 1) * 0.90) / n) if n > 0 else 0.90)
+        q_val = min(1.0, np.ceil((n + 1) * 0.90) / n) if n > 0 else 0.90
+        q90 = np.quantile(conformal_scores, q_val)
         stoch_margin = np.maximum(var_model.predict(X_train) * q90, 0.5)
 
-        p_vals = [ (1.0 - (np.sum(conformal_scores <= (np.abs(ml.loc[idx, 'Daily_Burn'] - preds.iloc[i]) / var_preds_train[i])) / len(conformal_scores))) * 100 for i, idx in enumerate(ml.index) ]
+        p_vals = []
+        for i, row_idx in enumerate(ml.index):
+            current_score = np.abs(ml.loc[row_idx, 'Daily_Burn'] - preds.iloc[i]) / var_preds_train[i]
+            prob_less_extreme = np.sum(conformal_scores <= current_score) / len(conformal_scores)
+            p_vals.append((1.0 - prob_less_extreme) * 100)
         trip_df.loc[sea_mask, 'P_Value'] = p_vals
 
         X_maha = ml[maha_features].values
@@ -411,7 +438,9 @@ def execute_ai_physics(trip_df, min_speed):
         trip_df.loc[outlier_mask, 'Status'] = 'STAT OUTLIER'
 
     except ValueError as e: ai_status_msg = f"AI Offline: {str(e)}"
-    except Exception as e: ai_status_msg = f"AI Exception: {str(e)}"; print(traceback.format_exc())
+    except Exception as e:
+        ai_status_msg = f"AI Critical Exception: {str(e)}"
+        print(traceback.format_exc())
 
     return trip_df, ai_status_msg
 
@@ -429,14 +458,25 @@ def run_pipeline(file_bytes, filename, min_speed, ghost_sea, ghost_port):
         valid_sea = trip_df[(trip_df['Phase'] == 'SEA') & (trip_df['Status'] == 'VERIFIED')]
         avg_sea = valid_sea['Phys_Burn'].sum() / valid_sea['Days'].sum() if valid_sea['Days'].sum() > 0 else 0.0
 
-        trip_df['Total_CYLO'] = trip_df.get('HSCYLO_L', pd.Series([0], dtype=float)) + trip_df.get('LSCYLO_L', pd.Series([0], dtype=float)) + trip_df.get('CYLO_GEN_L',pd.Series([0], dtype=float))
+        trip_df['Total_CYLO'] = (
+            trip_df.get('HSCYLO_L', pd.Series([0], dtype=float)) +
+            trip_df.get('LSCYLO_L', pd.Series([0], dtype=float)) +
+            trip_df.get('CYLO_GEN_L',pd.Series([0], dtype=float))
+        )
 
         summary = {
-            'vname': vname, 'integrity': round((len(trip_df) - quarantined) / len(trip_df) * 100, 1) if not trip_df.empty else 0,
-            'avg_dqi': round(trip_df['DQI'].mean(), 0) if not trip_df.empty else 0, 'total_fuel': round(trip_df['Phys_Burn'].sum(skipna=True), 1),
-            'avg_sea_burn': round(avg_sea, 1), 'total_nm': round(trip_df['Dist_NM'].sum(), 0), 'total_days': round(trip_df['Days'].sum(), 1),
-            'total_melo': round(trip_df.get('MELO_L', pd.Series([0])).sum(), 0), 'total_cylo': round(trip_df['Total_CYLO'].sum(), 0),
-            'cycles': len(trip_df), 'quarantined': quarantined, 'anomalies': len(trip_df[trip_df['Status'].isin(['GHOST BUNKER','STAT OUTLIER'])]),
+            'vname': vname,
+            'integrity': round((len(trip_df) - quarantined) / len(trip_df) * 100, 1) if not trip_df.empty else 0,
+            'avg_dqi': round(trip_df['DQI'].mean(), 0) if not trip_df.empty else 0,
+            'total_fuel': round(trip_df['Phys_Burn'].sum(skipna=True), 1),
+            'avg_sea_burn': round(avg_sea, 1),
+            'total_nm': round(trip_df['Dist_NM'].sum(), 0),
+            'total_days': round(trip_df['Days'].sum(), 1),
+            'total_melo': round(trip_df.get('MELO_L', pd.Series([0])).sum(), 0),
+            'total_cylo': round(trip_df['Total_CYLO'].sum(), 0),
+            'cycles': len(trip_df),
+            'quarantined': quarantined,
+            'anomalies': len(trip_df[trip_df['Status'].isin(['GHOST BUNKER','STAT OUTLIER'])]),
             'ai_msg': ai_msg
         }
         return trip_df, summary, cum_drift, None
@@ -451,18 +491,26 @@ _BL = dict(
     hoverlabel=dict(bgcolor="rgba(6,12,18,0.97)", bordercolor="rgba(0,224,176,0.55)", font=dict(family='Geist Mono', color='#f8fafc', size=13)),
     font=dict(family='Hanken Grotesk', color='#f8fafc'), transition=dict(duration=800, easing='cubic-in-out')
 )
-_M, _AX = dict(l=15, r=15, t=85, b=30), dict(gridcolor='rgba(255,255,255,0.02)', zerolinecolor='rgba(255,255,255,0.05)', tickfont=dict(family='Geist Mono', size=11, color='#475569'), showspikes=True, spikecolor="rgba(0,224,176,0.6)", spikethickness=1, spikedash="solid")
+_M = dict(l=15, r=15, t=85, b=30)
+_AX = dict(
+    gridcolor='rgba(255,255,255,0.02)', zerolinecolor='rgba(255,255,255,0.05)',
+    tickfont=dict(family='Geist Mono', size=11, color='#475569'),
+    showspikes=True, spikecolor="rgba(0,224,176,0.6)", spikethickness=1, spikedash="solid"
+)
 
 def chart_fuel(df):
-    sea, port = df[(df['Phase'] == 'SEA') & (~df['Status'].str.contains('QUARANTINE'))], df[(df['Phase'] == 'PORT') & (~df['Status'].str.contains('QUARANTINE'))]
+    sea = df[(df['Phase'] == 'SEA') & (~df['Status'].str.contains('QUARANTINE'))]
+    port = df[(df['Phase'] == 'PORT') & (~df['Status'].str.contains('QUARANTINE'))]
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.08)
     if not sea.empty:
         fig.add_trace(go.Bar(x=sea['Timeline'], y=sea['Phys_Burn'], name='Sea Fuel', marker_color='rgba(0,224,176,0.15)', marker_line_color='#00e0b0', marker_line_width=1.5), row=1, col=1)
         fig.add_trace(go.Scatter(x=sea['Timeline'], y=sea['Daily_Burn'], name='Sea MT/day', mode='lines+markers', line=dict(color='#00e0b0', width=3, shape='spline'), fill='tozeroy', fillcolor='rgba(0,224,176,0.05)', marker=dict(size=8, color="#051014", line=dict(color="#00e0b0", width=2))), row=1, col=1)
         fig.add_trace(go.Scatter(x=sea['Timeline'], y=sea['Speed_kn'], name='Sea Speed', mode='lines+markers', line=dict(color='#c9a84c', width=3, shape='spline'), fill='tozeroy', fillcolor='rgba(201,168,76,0.05)', marker=dict(size=8, color="#051014", line=dict(color="#c9a84c", width=2))), row=2, col=1)
-    if not port.empty: fig.add_trace(go.Bar(x=port['Timeline'], y=port['Phys_Burn'], name='Port Fuel', marker_color='rgba(255,42,85,0.15)', marker_line_color='#ff2a55', marker_line_width=1.5), row=1, col=1)
+    if not port.empty:
+        fig.add_trace(go.Bar(x=port['Timeline'], y=port['Phys_Burn'], name='Port Fuel', marker_color='rgba(255,42,85,0.15)', marker_line_color='#ff2a55', marker_line_width=1.5), row=1, col=1)
     fig.update_layout(**_BL, margin=_M, title=dict(text='Tri-State Fuel Consumption & Kinematics', font=dict(size=24, family='Bricolage Grotesque', color="#fff")), barmode='group', showlegend=True, height=700, legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
-    fig.update_xaxes(tickangle=-45, automargin=True, **_AX); fig.update_yaxes(**_AX)
+    fig.update_xaxes(tickangle=-45, automargin=True, **_AX)
+    fig.update_yaxes(**_AX)
     return fig
 
 def chart_lube(df):
@@ -476,7 +524,8 @@ def chart_lube(df):
 
 def chart_cum_drift(cum_drift):
     if not cum_drift: return None
-    cdf, fig = pd.DataFrame(cum_drift), go.Figure()
+    cdf = pd.DataFrame(cum_drift)
+    fig = go.Figure()
     fig.add_trace(go.Scatter(x=cdf['dt'], y=cdf['gap'], mode='lines+markers', name='A−L Gap', line=dict(color='#c9a84c', width=3), marker=dict(size=8, color="#051014", line=dict(color="#c9a84c", width=2)), fill='tozeroy', fillcolor='rgba(201,168,76,0.08)'))
     fig.add_hline(y=0, line=dict(color='rgba(255,255,255,0.15)', width=1))
     fig.update_layout(**_BL, margin=_M, title=dict(text='Physical vs Logged Mass Drift', font=dict(size=24, family='Bricolage Grotesque', color="#fff")), height=500, yaxis=dict(title='FO_A − FO_L (MT)', **_AX), xaxis=dict(automargin=True, **_AX))
@@ -493,7 +542,9 @@ def render_hud(sum_data):
     svg_alert = '<svg viewBox="0 0 24 24"><path d="M12 2L1 21h22M12 6l7.53 13H4.47M11 10v4h2v-4m-2 6v2h2v-2"/></svg>'
     svg_lock  = '<svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/></svg>'
 
-    w_class, q_class = (" hud-warn" if sum_data['anomalies'] > 0 else ""), (" hud-warn" if sum_data['quarantined'] > 0 else "")
+    w_class = " hud-warn" if sum_data['anomalies'] > 0 else ""
+    q_class = " hud-warn" if sum_data['quarantined'] > 0 else ""
+
     html = f"""
     <div class="hud-grid">
         <div class="hud-card"><div class="hud-header"><div class="hud-title">Verified Fuel</div><div class="hud-icon">{svg_fuel}</div></div><div class="hud-val">{sum_data['total_fuel']:,.1f}</div><div class="hud-sub">Metric Tons</div></div>
