@@ -169,11 +169,10 @@ def _parse_standard(df_raw):
             top_header = df_raw.iloc[i].ffill()
             bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
             cols_found = _map_columns(top_header, bottom_header, len(df_raw.columns))
-            break # CRITICAL FIX: Stops scanning immediately after finding the true headers.
+            break # CRITICAL FIX: Stops scanning immediately
 
-    if header_idx == -1: 
-        raise ValueError("Matrix Lock Failed: No valid headers found in target zone.")
-        
+    if header_idx == -1: raise ValueError("Matrix Lock Failed: No valid headers found in target zone.")
+    
     clean_data_chunk = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
     df = pd.DataFrame()
     for std_name, exc_idx in cols_found.items(): 
@@ -214,26 +213,27 @@ def semantic_parse(file_bytes, file_name):
     vn_raw = re.sub(r'\.[^.]+$', '', file_name).strip()
     vname  = re.sub(r'[_\-]+', ' ', vn_raw).upper()
 
-    # ════════════ TARGETED SHEET INTERROGATION ════════════
-    if file_name.lower().endswith('.xlsx') or file_name.lower().endswith('.xls'):
-        # Load the workbook structure without reading all the raw data yet
-        xls = pd.ExcelFile(io.BytesIO(file_bytes), engine='openpyxl')
+    # ════════════ BULLETPROOF SHEET INTERROGATION (THE REGEX SIEVE) ════════════
+    if file_name.lower().endswith(('.xlsx', '.xls')):
+        # Load the workbook structure depending on Excel format
+        if file_name.lower().endswith('.xlsx'):
+            xls = pd.ExcelFile(io.BytesIO(file_bytes), engine='openpyxl')
+        else:
+            xls = pd.ExcelFile(io.BytesIO(file_bytes))
         
-        # Sieve: Look for the exact sheet tab containing "ARR-DEP"
         target_sheet = None
         for sheet_name in xls.sheet_names:
-            sn_norm = sheet_name.upper().replace(" ", "").replace("_", "-")
-            if 'ARR-DEP' in sn_norm or 'ARRDEP' in sn_norm:
+            # STRIPS ALL NON-ALPHABETIC CHARACTERS (e.g. "ARR/DEP 1.6" becomes "ARRDEP")
+            sn_norm = re.sub(r'[^A-Z]', '', sheet_name.upper())
+            if 'ARRDEP' in sn_norm:
                 target_sheet = sheet_name
                 break
                 
-        # Extract only the target sheet (or fallback to the first sheet if missing)
         if target_sheet:
             df_raw = pd.read_excel(xls, sheet_name=target_sheet, header=None, dtype=str)
         else:
             df_raw = pd.read_excel(xls, sheet_name=0, header=None, dtype=str)
     else:
-        # Fallback for CSV files
         df_raw = pd.read_csv(io.StringIO(file_bytes.decode('latin-1', errors='replace')), header=None, on_bad_lines='skip', dtype=str)
 
     if df_raw.empty or len(df_raw) < 4: 
