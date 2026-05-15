@@ -169,10 +169,16 @@ def _parse_standard(df_raw):
             top_header = df_raw.iloc[i].ffill()
             bottom_header = df_raw.iloc[i + 1] if i + 1 < len(df_raw) else pd.Series([np.nan] * len(df_raw.columns))
             cols_found = _map_columns(top_header, bottom_header, len(df_raw.columns))
+            break # CRITICAL FIX: Stops scanning immediately after finding the true headers.
 
-    if header_idx == -1: raise ValueError("Matrix Lock Failed: No valid headers found in target zone.")
-    df = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
-    for std_name, exc_idx in cols_found.items(): df[std_name] = df.iloc[:, exc_idx]
+    if header_idx == -1: 
+        raise ValueError("Matrix Lock Failed: No valid headers found in target zone.")
+        
+    clean_data_chunk = df_raw.iloc[header_idx + 1:].copy().reset_index(drop=True)
+    df = pd.DataFrame()
+    for std_name, exc_idx in cols_found.items(): 
+        df[std_name] = clean_data_chunk.iloc[:, exc_idx]
+        
     return df
 
 def _parse_manifest(df_raw, start_row):
@@ -210,10 +216,10 @@ def semantic_parse(file_bytes, file_name):
 
     # ════════════ TARGETED SHEET INTERROGATION ════════════
     if file_name.lower().endswith('.xlsx') or file_name.lower().endswith('.xls'):
-        # 1. Load the workbook structure without reading all the raw data yet
+        # Load the workbook structure without reading all the raw data yet
         xls = pd.ExcelFile(io.BytesIO(file_bytes), engine='openpyxl')
         
-        # 2. Sieve: Look for the exact sheet tab containing "ARR-DEP"
+        # Sieve: Look for the exact sheet tab containing "ARR-DEP"
         target_sheet = None
         for sheet_name in xls.sheet_names:
             sn_norm = sheet_name.upper().replace(" ", "").replace("_", "-")
@@ -221,7 +227,7 @@ def semantic_parse(file_bytes, file_name):
                 target_sheet = sheet_name
                 break
                 
-        # 3. Extract only the target sheet (or fallback to the first sheet if missing)
+        # Extract only the target sheet (or fallback to the first sheet if missing)
         if target_sheet:
             df_raw = pd.read_excel(xls, sheet_name=target_sheet, header=None, dtype=str)
         else:
@@ -230,7 +236,8 @@ def semantic_parse(file_bytes, file_name):
         # Fallback for CSV files
         df_raw = pd.read_csv(io.StringIO(file_bytes.decode('latin-1', errors='replace')), header=None, on_bad_lines='skip', dtype=str)
 
-    if df_raw.empty or len(df_raw) < 4: raise ValueError("Target data sheet is empty or severely malformed.")
+    if df_raw.empty or len(df_raw) < 4: 
+        raise ValueError("Target data sheet is empty or severely malformed.")
     # ════════════════════════════════════════════════════════
 
     # Manifest Router Logic
